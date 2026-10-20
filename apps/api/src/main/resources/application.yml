@@ -1,0 +1,13 @@
+server:
+  port: ${API_PORT:8080}
+spring:
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/ourlittlehours}
+    username: ${POSTGRES_USER:olh}
+    password: ${POSTGRES_PASSWORD:olh_local_dev}
+  flyway:
+    enabled: true
+app:
+  cors-origins: ${CORS_ORIGINS:http://localhost:3000}
+management:
+  endpoints.web.exposure.include: health

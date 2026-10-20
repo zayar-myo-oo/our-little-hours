@@ -1,0 +1,25 @@
+{
+  "id": "the-unfinished-page",
+  "title": "The Unfinished Page",
+  "start": "s1",
+  "nodes": {
+    "s1": { "id": "s1", "text": "Rain taps the window. On the desk, a notebook lies open to a page that ends mid-sentence.", "next": "s2" },
+    "s2": { "id": "s2", "speaker": "@companion", "mood": "shy", "text": "Ah — don't read that yet! It's… not finished. It hasn't been finished for three weeks.", "next": "s3" },
+    "s3": { "id": "s3", "speaker": "@companion", "text": "It's a letter to my younger self. I keep stopping at the same line: \"Someday, you will…\"", "choices": [
+      { "text": "\"Why do you stop there?\"", "next": "s4a", "flag": "asked-why" },
+      { "text": "\"Maybe it doesn't need an ending yet.\"", "next": "s4b", "flag": "gentle" }
+    ] },
+    "s4a": { "id": "s4a", "speaker": "@companion", "mood": "thoughtful", "text": "Because whatever I write becomes a promise. And what if I can't keep it?", "next": "s5" },
+    "s4b": { "id": "s4b", "speaker": "@companion", "mood": "surprised", "text": "…Huh. I never thought an empty line could be allowed to just exist.", "next": "s5" },
+    "s5": { "id": "s5", "text": "She turns the pencil over in her fingers. The lamp hums. Somewhere a kettle clicks off.", "next": "s6" },
+    "s6": { "id": "s6", "speaker": "@companion", "text": "Will you sit with me while I try? Just for one focus session.", "choices": [
+      { "text": "\"Of course. I'll work on my own page too.\"", "next": "s7", "flag": "stayed" },
+      { "text": "\"You've got this. I'll check in after.\"", "next": "s7b" }
+    ] },
+    "s7": { "id": "s7", "text": "You both write in silence. Pages fill. The rain softens into a whisper.", "next": "s8" },
+    "s7b": { "id": "s7b", "text": "You step away. Through the doorway you hear the pencil — hesitant, then steady.", "next": "s8" },
+    "s8": { "id": "s8", "speaker": "@companion", "mood": "happy", "text": "\"Someday, you will…\" {flag:gentle|— no. I'll leave it open. That's the point, isn't it?|— finish what you start, one small page at a time.}", "next": "s9" },
+    "s9": { "id": "s9", "speaker": "@companion", "text": "{flag:stayed|Thank you for staying. It was easier with company.|Thanks for believing I could.} …Same time tomorrow?", "next": "end" },
+    "end": { "id": "end", "text": "— End of Chapter 1: The Unfinished Page —", "end": true }
+  }
+}

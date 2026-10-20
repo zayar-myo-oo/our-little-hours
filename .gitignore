@@ -1,0 +1,12 @@
+node_modules/
+.next/
+build/
+.gradle/
+.env
+.env.local
+*.tsbuildinfo
+out/
+.DS_Store
+# Exported character models are not committed by default (check each model's license before publishing).
+apps/web/public/models/*.vrm
+.claude/
