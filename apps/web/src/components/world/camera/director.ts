@@ -92,10 +92,13 @@ export class CameraDirector {
   get transitioning() { return this.duration > 0; }
 
   /** Update shot targets after a resize (keeps the current shot, no animation). */
-  reframe(overview: CamState, closeups: Record<AnchorId, CamState>, now: number) {
+  /** Update shot targets (resize, or a new wide view). With `animate`, moves smoothly to the new target. */
+  reframe(overview: CamState, closeups: Record<AnchorId, CamState>, now: number, animate = false) {
     const cur = this.sample(now);
     this.opts = { ...this.opts, overview, closeups };
-    this.to = this.shot === "overview" ? overview : closeups[this.shot];
+    const target = this.shot === "overview" ? overview : closeups[this.shot];
+    if (animate && !this.reducedMotion) { this.from = cur; this.to = target; this.start = now; this.duration = transitionSeconds(cur, target) * 1000; return; }
+    this.to = target;
     if (this.duration === 0) this.from = this.to; else this.from = cur;
   }
 

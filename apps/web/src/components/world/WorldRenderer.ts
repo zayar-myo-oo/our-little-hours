@@ -7,7 +7,7 @@ import { makeKit, v, rng } from "@/components/room3d/kit";
 import { paletteFor } from "@/components/room3d/timeOfDay";
 import { pauseWhenHidden } from "@/lib/visibility";
 import studyJson from "@content/locations/study.json";
-import { validateLocation, REQUIRED_ANCHORS, type AnchorId, type LocationManifest } from "@/world/locations/schema";
+import { validateLocation, REQUIRED_ANCHORS, type AnchorId, type LocationManifest, type ViewId } from "@/world/locations/schema";
 import { PREFAB_IDS, type PrefabId } from "./prefabs/ids";
 import { buildPrefab } from "./prefabs/registry";
 import { isoCameraPose } from "./camera/iso";
@@ -19,6 +19,7 @@ import { detectTier, qualityFor, readDeviceInfo, parseQualityOverride, FrameLimi
 import { applyPose, placeSeated, placeStanding, dimMaterials, type HumanoidLike } from "./character/vrmApply";
 import { poseFor, mtoonDimFactor, standingIdlePose, KEYBOARD_HAND_Y } from "./character/vrmPose";
 import { pointAlong, pathLength } from "@/world/sim/nav";
+import { GlanceScheduler, headTurnToward } from "./character/glance";
 import type { SimSnapshot } from "@/world/sim/engine";
 
 export interface WorldHandle {
@@ -33,6 +34,9 @@ export interface WorldHandle {
   focusCamera(shot: ShotId): void;
   setAutoCamera(on: boolean): void;
   readonly cameraShot: ShotId;
+  /** Wide room view: cozy (in-room, illustration framing), cctv (high corner), dollhouse (isometric cut-away). */
+  setView(view: ViewId): void;
+  readonly view: ViewId;
   readonly anchor: AnchorId;
   readonly hasVrm: boolean;
   /** Resolves when the selected VRM has loaded (true) or failed (false). */
@@ -47,6 +51,7 @@ export interface WorldOptions {
   location?: LocationManifest; anchor?: AnchorId;
   /** Called when the camera shot changes (manual, automatic or returning to the overview). */
   onCameraShot?: (shot: ShotId) => void;
+  view?: ViewId;
 }
 
 type VRMLike = {
@@ -86,7 +91,7 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
   const fill = new THREE.DirectionalLight(0xffe6d6, night ? 0.25 : 0.55); fill.position.set(4, 5, 6); scene.add(fill);
 
   // props by layer
-  const layers = { backdrop: new THREE.Group(), shell: new THREE.Group(), props: new THREE.Group(), foreground: new THREE.Group() };
+  const layers = { backdrop: new THREE.Group(), shell: new THREE.Group(), props: new THREE.Group(), foreground: new THREE.Group(), cutaway: new THREE.Group() };
   for (const g of Object.values(layers)) scene.add(g);
   const foreground: THREE.Object3D[] = [];
   const updaters: ((t: number) => void)[] = [];
@@ -100,7 +105,7 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
   }
 
   // Static furniture and walls never move: one mesh per material keeps draw calls low (389 → ~50 for the study).
-  mergeStatic(layers.shell); mergeStatic(layers.props);
+  mergeStatic(layers.shell); mergeStatic(layers.props); mergeStatic(layers.cutaway);
 
   // rain outside the window (only visible through the opening)
   const RAIN = quality.tier === "low" ? 60 : 140, rainPos = new Float32Array(RAIN * 6), rr = rng(4);
@@ -127,7 +132,6 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
       VRMUtils.rotateVRM0(loaded as never);
       dimMaterials(loaded.scene, mtoonDimFactor(pal.ambient, pal.sunIntensity));
       charRoot.add(loaded.scene);
-      if (loaded.lookAt) loaded.lookAt.target = camera;
       vrm = loaded;
       applyState();
       performance.mark("olh:world-model-ready");
@@ -170,14 +174,15 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
       vrm.scene.position.y = Math.abs(sw) * 0.015;
     }
   }
-  const directorRef: { current?: CameraDirector } = {}; // set below once the camera shots are known
+  const directorRef: { current?: CameraDirector } = {};
+  const glanceRef: { current?: GlanceScheduler } = {}; // set below once the camera shots are known
   function applyState() {
     // M1-A has no simulation yet: map today's schedule onto placement (M1-C replaces this).
     charRoot.visible = state !== "BUSY";
     if (sim?.walk) { startWalking(); return; } // position follows the path every frame
     const at = sim ? sim.anchor : state === "SLEEPING" ? "reading" : anchorId;
     place(at);
-    if (at !== placedAt) { const first = placedAt === null; placedAt = at; if (!first && charRoot.visible) directorRef.current?.focus(at, performance.now(), "auto"); }
+    if (at !== placedAt) { const first = placedAt === null; placedAt = at; if (!first && charRoot.visible) { directorRef.current?.focus(at, performance.now(), "auto"); glanceRef.current?.glanceNow(performance.now() / 1000 + 2.5); } }
     rain.visible = raining;
   }
   applyState();
@@ -196,9 +201,19 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
   }
 
   // Hybrid camera: iso overview + per-anchor close-ups (see camera/director.ts for the dolly-zoom model)
+  const viewIds: ViewId[] = ["cozy", "cctv", "dollhouse"];
+  const urlView = urlParam("view") as ViewId | null;
+  // precedence: ?view= (explicit) > remembered choice > the location default
+  let view: ViewId = urlView && viewIds.includes(urlView) ? urlView : opts.view ?? loc.camera.defaultView;
+  /** Wide view as a camera state. Portrait screens widen in-room views so the room still reads. */
+  const viewState = (id: ViewId, aspect: number): CamState => {
+    if (id === "dollhouse") { const iso = isoCameraPose(loc.camera.overview, loc.bounds, aspect); return stateFromPose(iso.position, iso.target, iso.fov); }
+    const f = loc.camera.views[id];
+    const fov = aspect < 0.8 ? Math.min(80, f.fov * 1.35) : aspect < 1.1 ? Math.min(80, f.fov * 1.12) : f.fov;
+    return stateFromPose(new THREE.Vector3(...f.pos), new THREE.Vector3(...f.target), fov);
+  };
   const shotsFor = (aspect: number) => {
-    const iso = isoCameraPose(loc.camera.overview, loc.bounds, aspect);
-    const overview = stateFromPose(iso.position, iso.target, iso.fov);
+    const overview = viewState(view, aspect);
     const closeups = Object.fromEntries(REQUIRED_ANCHORS.map((a) => [a, closeupState(loc.anchors[a].pos, loc.camera.closeups[a], aspect)])) as Record<AnchorId, CamState>;
     return { overview, closeups };
   };
@@ -239,6 +254,9 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
     const pos = camPosition(s, maxDist), d = pos.distanceTo(tgt.set(...s.target));
     camera.position.copy(pos); camera.lookAt(tgt);
     camera.fov = s.fov; camera.near = Math.max(0.05, d * 0.02); camera.far = d + 25;
+    // cut-away walls: visible only from inside the room (in-room views, close-ups); hidden for the dollhouse view
+    const b = loc.bounds, inside = pos.x > b.min[0] && pos.x < b.max[0] && pos.z > b.min[2] && pos.z < b.max[2] && pos.y < b.max[1] + 0.3;
+    layers.cutaway.visible = inside;
     camera.updateProjectionMatrix();
   }
 
@@ -256,6 +274,8 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
 
   const clock = new THREE.Clock(), limiter = new FrameLimiter(quality.maxFps);
   const head = new THREE.Vector3(), chest = new THREE.Vector3();
+  const glance = new GlanceScheduler((Math.random() * 2 ** 31) | 0, performance.now() / 1000), headPos = new THREE.Vector3();
+  glanceRef.current = glance;
   let budgetChecked = false, raf = 0, t = 0, frame = 0, blinkT = 2, occluding = new Set<THREE.Object3D>();
   const loop = (now: number) => {
     raf = requestAnimationFrame(loop);
@@ -283,8 +303,16 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
     if (blinkT < -0.12) blinkT = 2 + Math.random() * 3;
     if (vrm) {
       vrm.expressionManager?.setValue("blink", closed ? 1 : 0);
-      const hb = vrm.humanoid.getNormalizedBoneNode("head");
-      if (hb) hb.rotation.x = (vrm.meta?.metaVersion === "0" ? -1 : 1) * (state === "SLEEPING" ? 0.45 : reduced ? 0 : Math.sin(t * 0.5) * 0.03);
+      const hb = vrm.humanoid.getNormalizedBoneNode("head"), neck = vrm.humanoid.getNormalizedBoneNode("neck");
+      const k = vrm.meta?.metaVersion === "0" ? -1 : 1;
+      // occasional glance at the viewer (head + eyes + a small smile), only when awake, settled and visible
+      const w = glance.weight(now / 1000, state === "AVAILABLE" && !sim?.walk && charRoot.visible);
+      let turn = { yaw: 0, pitch: 0 };
+      if (w > 0 && hb) turn = headTurnToward(hb.getWorldPosition(headPos).toArray() as [number, number, number], charRoot.rotation.y, camera.position.toArray() as [number, number, number]);
+      if (hb) hb.rotation.set(k * ((state === "SLEEPING" ? 0.45 : reduced ? 0 : Math.sin(t * 0.5) * 0.03) - w * turn.pitch * 0.8), w * turn.yaw * 0.75, 0);
+      if (neck) neck.rotation.y = w * turn.yaw * 0.25;
+      if (vrm.lookAt) vrm.lookAt.target = w > 0.3 ? camera : undefined;
+      vrm.expressionManager?.setValue("happy", 0.35 * w);
       vrm.update(dt);
     } else placeholder?.animate(t, closed, reduced);
     applyCamera(now);
@@ -313,6 +341,13 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
     focusCamera(shot) { cam.focus(shot, performance.now(), "manual"); },
     setAutoCamera(on) { cam.auto = on; },
     get cameraShot() { return cam.currentShot; },
+    setView(id) {
+      if (!viewIds.includes(id) || id === view) return;
+      view = id;
+      const sh = shotsFor(aspect), now = performance.now();
+      cam.reframe(sh.overview, sh.closeups, now, cam.currentShot === "overview");
+    },
+    get view() { return view; },
     get anchor() { return placedAt ?? anchorId; },
     destroy() {
       disposed = true; stopWatching(); cancelAnimationFrame(raf); ro.disconnect();

@@ -22,6 +22,10 @@ export function Room({ state, reducedMotion, rain, mode, modelUrl, onModelError,
   const [modelLoading, setModelLoading] = useState(false);
   const [cameraShot, setCameraShot] = useState("overview");
   const [autoCamera, setAutoCamera] = useState(true);
+  const [view, setView] = useState<"cozy" | "cctv" | "dollhouse" | null>(() => {
+    const ok = (v: string | null) => (v === "cozy" || v === "cctv" || v === "dollhouse" ? v : null);
+    try { return ok(new URLSearchParams(location.search).get("view")) ?? ok(localStorage.getItem("olh-world-view")); } catch { return null; }
+  });
 
   useEffect(() => { setActive(initialFor(mode)); }, [mode]);
 
@@ -33,7 +37,7 @@ export function Room({ state, reducedMotion, rain, mode, modelUrl, onModelError,
         const webgl = (await import("./scene")).webglAvailable();
         if (!webgl) throw new Error("no webgl");
         const h: Handle = active === "world"
-          ? await (await import("../world/WorldRenderer")).createWorldScene(host.current!, { reducedMotion, state, rain, modelUrl, onCameraShot: setCameraShot })
+          ? await (await import("../world/WorldRenderer")).createWorldScene(host.current!, { reducedMotion, state, rain, modelUrl, onCameraShot: setCameraShot, view: view ?? undefined })
           : active === "3d"
           ? await (await import("../room3d/scene3d")).createScene3D(host.current!, { reducedMotion, state, rain, modelUrl })
           : await (await import("./scene")).createScene(host.current!, { reducedMotion, state, night: new Date().getHours() >= 18 || new Date().getHours() < 6 });
@@ -76,6 +80,15 @@ export function Room({ state, reducedMotion, rain, mode, modelUrl, onModelError,
       <div key={`${active}:${modelUrl}`} ref={host} className="absolute inset-0" aria-hidden />
       {active === "world" && (
         <div className="absolute left-3 top-1/2 flex -translate-y-1/2 flex-col gap-1.5 rounded-2xl border border-cream/15 bg-ink/55 p-1.5 text-[11px] text-cream backdrop-blur" role="group" aria-label="Camera">
+          <button title="Change the room view" onClick={() => {
+            const w = scene.current as unknown as { setView(v: string): void; view: string; focusCamera(s: string): void } | null;
+            const order = ["cozy", "cctv", "dollhouse"] as const;
+            const next = order[(order.indexOf((w?.view ?? view ?? "cozy") as (typeof order)[number]) + 1) % order.length];
+            w?.setView(next); w?.focusCamera("overview"); setView(next);
+            try { localStorage.setItem("olh-world-view", next); } catch { /* storage blocked */ }
+          }} className="rounded-xl bg-cream/10 px-2.5 py-1.5 hover:bg-cream/20">
+            {({ cozy: "Cozy", cctv: "CCTV", dollhouse: "Dollhouse" } as const)[view ?? "cozy"]} ▸
+          </button>
           {([["overview", "Room"], ["closeup", "Close-up"]] as const).map(([id, label]) => {
             const on = id === "overview" ? cameraShot === "overview" : cameraShot !== "overview";
             return (

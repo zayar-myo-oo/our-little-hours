@@ -2,16 +2,20 @@
 export type Vec3 = [number, number, number];
 export type AnchorId = "desk" | "reading" | "window" | "tea";
 export type AnchorPose = "sit_type" | "sit_relax" | "stand";
-export type Layer = "backdrop" | "shell" | "props" | "foreground";
+/** cutaway: walls between the room and an outside camera (dollhouse view); hidden while the camera is outside. */
+export type Layer = "backdrop" | "shell" | "props" | "foreground" | "cutaway";
 
 export const REQUIRED_ANCHORS: readonly AnchorId[] = ["desk", "reading", "window", "tea"];
 const POSES: readonly AnchorPose[] = ["sit_type", "sit_relax", "stand"];
-const LAYERS: readonly Layer[] = ["backdrop", "shell", "props", "foreground"];
+const LAYERS: readonly Layer[] = ["backdrop", "shell", "props", "foreground", "cutaway"];
 
 /** approach: the last metres into the anchor are a sit-down step, not walking (e.g. an armchair's depth). Default 0.35. */
 export interface Anchor { pos: Vec3; faceY: number; pose: AnchorPose; seatTop?: number; approach?: number; label: string }
 export interface PropPlacement { prefab: string; pos: Vec3; rotY?: number; layer: Layer }
 export interface IsoShot { kind: "iso"; target: Vec3; yaw: number; pitch: number; fov: number; margin: number }
+/** A fixed in-room camera (cozy illustration framing, home-CCTV corner). */
+export interface FixedShot { kind: "fixed"; pos: Vec3; target: Vec3; fov: number }
+export type ViewId = "cozy" | "cctv" | "dollhouse";
 /** Cinematic close-up on an anchor. frameH = visible height (m) at the target; hold = seconds before auto returns to overview. */
 export interface CloseupShot { targetOffset: Vec3; yaw: number; pitch: number; fov: number; frameH: number; hold: number }
 export interface AssetEntry { id: string; kind: "procedural" | "file"; src?: string; status: "placeholder" | "final"; license: string; note?: string }
@@ -21,7 +25,7 @@ export interface LocationManifest {
   lighting: string;
   anchors: Record<AnchorId, Anchor>;
   props: PropPlacement[];
-  camera: { overview: IsoShot; closeups: Record<AnchorId, CloseupShot> };
+  camera: { overview: IsoShot; closeups: Record<AnchorId, CloseupShot>; views: Record<"cozy" | "cctv", FixedShot>; defaultView: ViewId };
   /** Walkable graph: extra nodes plus edges between nodes and anchors (anchors are nodes too). */
   waypoints: { nodes: Record<string, Vec3>; edges: [string, string][] };
   assets: AssetEntry[];
@@ -77,6 +81,13 @@ export function validateLocation(m: unknown, knownPrefabs: readonly string[]): s
     if (ov.pitch <= 0.2 || ov.pitch >= 1.4) errs.push("camera.overview.pitch: must look down between ~12° and ~80°");
   }
 
+  for (const id of ["cozy", "cctv"] as const) {
+    const f = o.camera?.views?.[id];
+    if (!f || f.kind !== "fixed" || !isVec3(f.pos) || !isVec3(f.target) || !isNum(f.fov)) { errs.push(`camera.views.${id}: invalid`); continue; }
+    if (f.fov < 30 || f.fov > 80) errs.push(`camera.views.${id}.fov: keep between 30° and 80°`);
+    if (boundsOk && !f.pos.every((c, i) => c > b!.min[i] + 0.1 && c < b!.max[i] - 0.1)) errs.push(`camera.views.${id}: camera must be inside the room`);
+  }
+  if (!["cozy", "cctv", "dollhouse"].includes(o.camera?.defaultView as string)) errs.push("camera.defaultView: cozy | cctv | dollhouse");
   for (const id of REQUIRED_ANCHORS) {
     const c = o.camera?.closeups?.[id];
     if (!c) { errs.push(`camera.closeups.${id}: missing`); continue; }

@@ -265,6 +265,133 @@ const builders: Record<PrefabId, Builder> = {
     }
     return { object: g };
   },
+
+  // ---- enclosing walls (layer "cutaway": hidden whenever the camera is outside the room) ----------------
+  wall_right: ({ kit }) => {
+    // at x = 3, inner face towards -x
+    const g = new THREE.Group(), t = 0.1;
+    kit.box(t, 2.8, 5, 0xf3e4d5, v(t / 2, 1.4, 0), g, 0);
+    kit.box(0.03, 0.85, 5, C.wain, v(-0.015, 0.425, 0), g, 0);
+    kit.box(0.05, 0.05, 5, C.trim, v(-0.03, 0.86, 0), g, 0);
+    const poster = (w: number, h: number, z: number, y: number, paint: (c: CanvasRenderingContext2D, w: number, h: number) => void) => {
+      kit.box(0.03, h + 0.06, w + 0.06, C.trim, v(-0.02, y, z), g, 1.03);
+      const m = new THREE.Mesh(kit.track(new THREE.PlaneGeometry(w, h)), kit.toonMat({ map: kit.canvasTex(256, Math.round((256 * h) / w), paint) }));
+      m.position.set(-0.04, y, z); m.rotation.y = -Math.PI / 2; g.add(m);
+    };
+    poster(0.55, 0.75, 1.0, 1.65, (c, w, h) => { // sunset over hills (original)
+      const gr = c.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, "#f7a07c"); gr.addColorStop(0.6, "#fbd3a6"); gr.addColorStop(1, "#f6e2c4");
+      c.fillStyle = gr; c.fillRect(0, 0, w, h);
+      c.fillStyle = "#fff3d6"; c.beginPath(); c.arc(w * 0.62, h * 0.48, 34, 0, Math.PI * 2); c.fill();
+      c.fillStyle = "#8a6aa8"; c.beginPath(); c.moveTo(0, h * 0.7); c.quadraticCurveTo(w * 0.4, h * 0.45, w, h * 0.68); c.lineTo(w, h); c.lineTo(0, h); c.fill();
+      c.fillStyle = "#5d4a7a"; c.beginPath(); c.moveTo(0, h * 0.82); c.quadraticCurveTo(w * 0.6, h * 0.62, w, h * 0.85); c.lineTo(w, h); c.lineTo(0, h); c.fill();
+    });
+    poster(0.45, 0.45, 1.75, 1.95, (c, w, h) => { // music note badge (original)
+      c.fillStyle = "#cfe3ee"; c.fillRect(0, 0, w, h);
+      c.fillStyle = "#e48a8a"; c.beginPath(); c.arc(w / 2, h / 2, w * 0.36, 0, Math.PI * 2); c.fill();
+      c.fillStyle = "#fffaf2"; c.fillRect(w * 0.52, h * 0.28, 10, h * 0.36); c.beginPath(); c.arc(w * 0.47, h * 0.64, 16, 0, Math.PI * 2); c.fill();
+    });
+    poster(0.4, 0.3, -1.0, 1.75, (c, w, h) => { // polaroid-style snapshot (original)
+      c.fillStyle = "#fffaf2"; c.fillRect(0, 0, w, h);
+      c.fillStyle = "#a9cfe0"; c.fillRect(w * 0.08, h * 0.08, w * 0.84, h * 0.6);
+      c.fillStyle = "#f7b6cf"; c.beginPath(); c.arc(w * 0.35, h * 0.5, 22, 0, Math.PI * 2); c.fill();
+    });
+    return { object: g };
+  },
+
+  wall_front: ({ kit }) => {
+    // at z = 2.5, inner face towards -z
+    const g = new THREE.Group(), t = 0.1;
+    kit.box(6, 2.8, t, 0xf3e4d5, v(0, 1.4, t / 2), g, 0);
+    kit.box(6, 0.85, 0.03, C.wain, v(0, 0.425, -0.015), g, 0);
+    kit.box(6, 0.05, 0.05, C.trim, v(0, 0.86, -0.03), g, 0);
+    kit.box(0.08, 0.12, 0.02, C.trim, v(1.9, 1.2, -0.02), g, 1.04); // light switch
+    return { object: g };
+  },
+
+  // ---- cozy decor --------------------------------------------------------------------------------------
+  fairy_lights: ({ kit, pal, lowQuality }) => {
+    // Warm string lights swagging along the top of the back and left walls. One instanced mesh = one draw call.
+    const g = new THREE.Group(), pts: THREE.Vector3[] = [];
+    const swag = (a: THREE.Vector3, b: THREE.Vector3, swags: number, sag: number, n: number) => {
+      const line: THREE.Vector3[] = [];
+      for (let i = 0; i <= n; i++) {
+        const f = i / n, local = (f * swags) % 1;
+        const p = a.clone().lerp(b, f); p.y -= Math.sin(local * Math.PI) * sag;
+        line.push(p); if (i % 2 === 1) pts.push(p.clone().add(v(0, -0.035, 0)));
+      }
+      g.add(new THREE.Line(kit.track(new THREE.BufferGeometry().setFromPoints(line)), kit.track(new THREE.LineBasicMaterial({ color: 0x4a3a34 }))));
+    };
+    swag(v(-2.9, 2.68, -2.42), v(2.9, 2.68, -2.42), 3, 0.16, lowQuality ? 36 : 60);
+    swag(v(-2.92, 2.68, -2.4), v(-2.92, 2.68, 2.4), 2, 0.14, lowQuality ? 30 : 48);
+    const bulbs = new THREE.InstancedMesh(kit.track(new THREE.SphereGeometry(0.022, 8, 6)), kit.track(new THREE.MeshBasicMaterial({ color: 0xffffff })), pts.length);
+    bulbs.userData.noMerge = true;
+    const base = [0xfff1c9, 0xffd7a8, 0xffc4d8].map((c) => new THREE.Color(c)), tmp = new THREE.Color(), m = new THREE.Matrix4();
+    pts.forEach((p, i) => { bulbs.setMatrixAt(i, m.makeTranslation(p.x, p.y, p.z)); bulbs.setColorAt(i, base[i % 3]); });
+    g.add(bulbs);
+    const glow = pal.phase === "night" ? 1.4 : pal.phase === "sunset" ? 1.1 : 0.85;
+    const lights = [new THREE.PointLight(0xffc89a, 0.5 * glow, 4, 1.8), new THREE.PointLight(0xffc89a, 0.4 * glow, 4, 1.8)];
+    lights[0].position.set(0.5, 2.4, -2.1); lights[1].position.set(-2.6, 2.4, 0.4); g.add(...lights);
+    return {
+      object: g, lights,
+      update: (t) => {
+        pts.forEach((_, i) => bulbs.setColorAt(i, tmp.copy(base[i % 3]).multiplyScalar(glow * (0.8 + 0.25 * Math.sin(t * 1.6 + i * 1.7)))));
+        if (bulbs.instanceColor) bulbs.instanceColor.needsUpdate = true;
+      },
+    };
+  },
+
+  wall_shelf: ({ kit }) => {
+    // floating shelf: jars, mugs, a small plant (front faces +z locally)
+    const g = new THREE.Group();
+    kit.box(0.9, 0.04, 0.24, C.wood, v(0, 0, 0), g);
+    for (const x of [-0.35, 0.35]) kit.box(0.03, 0.12, 0.2, C.darkWood, v(x, -0.07, -0.02), g, 0);
+    kit.mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.14, 12), 0xc8e8ff, v(-0.32, 0.09, 0), g);
+    kit.mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.1, 12), 0xf0cf7c, v(-0.2, 0.07, 0.02), g);
+    for (const x of [0.0, 0.1]) kit.mesh(new THREE.CylinderGeometry(0.035, 0.03, 0.07, 12), 0xf9d7e2, v(x, 0.055, 0.03), g);
+    kit.mesh(new THREE.CylinderGeometry(0.06, 0.05, 0.08, 12), C.pot, v(0.3, 0.06, 0), g);
+    leaves(kit, g, v(0.3, 0.13, 0), 6, 0.16, 0.04, 23);
+    for (let i = 0; i < 6; i++) kit.mesh(new THREE.SphereGeometry(0.03, 8, 6), C.leaf, v(0.33 + (i % 2) * 0.03, 0.02 - i * 0.07, 0.08), g, 1.05);
+    return { object: g };
+  },
+
+  ivy_window: ({ kit }) => {
+    // trailing ivy along the curtain rod, hanging down at both sides of the window
+    const g = new THREE.Group(), r = rng(61);
+    for (let x = -2.9; x <= 0.9; x += 0.09) kit.mesh(new THREE.SphereGeometry(0.035 + r() * 0.015, 8, 6), r() > 0.5 ? C.leaf : C.leafDark, v(x, 2.52 + (r() - 0.5) * 0.06, 0.14 + r() * 0.05), g, 1.05);
+    for (const x of [-2.85, 0.85]) for (let i = 0; i < 9; i++) kit.mesh(new THREE.SphereGeometry(0.032, 8, 6), C.leaf, v(x + (r() - 0.5) * 0.06, 2.46 - i * 0.09, 0.16), g, 1.05);
+    return { object: g };
+  },
+
+  candle: ({ kit, pal }) => {
+    const g = new THREE.Group();
+    kit.mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.09, 12), 0xfaf3e6, v(0, 0.045, 0), g);
+    const flame = new THREE.Mesh(kit.track(new THREE.ConeGeometry(0.012, 0.04, 8)), kit.track(new THREE.MeshBasicMaterial({ color: 0xffd27a })));
+    flame.position.set(0, 0.115, 0); g.add(flame);
+    const light = new THREE.PointLight(0xffb066, pal.phase === "day" ? 0.08 : 0.35, 1.6, 2); light.position.set(0, 0.2, 0); g.add(light);
+    return { object: g, lights: [light], update: (t) => { light.intensity = (pal.phase === "day" ? 0.08 : 0.35) * (0.9 + 0.1 * Math.sin(t * 9) * Math.sin(t * 3.7)); } };
+  },
+
+  pouf: ({ kit }) => {
+    const g = new THREE.Group();
+    kit.mesh(new THREE.CylinderGeometry(0.26, 0.28, 0.3, 20), 0x8fb9a8, v(0, 0.15, 0), g);
+    kit.mesh(new THREE.TorusGeometry(0.24, 0.03, 8, 24), 0x7aa898, v(0, 0.3, 0), g, 0).rotation.x = Math.PI / 2;
+    return { object: g };
+  },
+
+  backpack: ({ kit }) => {
+    const g = new THREE.Group();
+    const body = kit.mesh(new THREE.CapsuleGeometry(0.13, 0.2, 4, 10), 0x6a9aa0, v(0, 0.24, 0), g, 1.05); body.scale.set(1.1, 1, 0.65);
+    kit.box(0.2, 0.12, 0.06, 0x5b878d, v(0, 0.17, 0.09), g, 1.04);
+    kit.mesh(new THREE.TorusGeometry(0.06, 0.012, 6, 12, Math.PI), 0x3e5a5e, v(0, 0.44, 0), g, 0);
+    return { object: g };
+  },
+
+  floor_books: ({ kit }) => {
+    const g = new THREE.Group();
+    for (let i = 0; i < 4; i++) kit.box(0.24 - i * 0.015, 0.05, 0.17, BOOKS[(i + 3) % 6], v(0, 0.025 + i * 0.05, 0), g, 1.02).rotation.y = (i % 2 ? 0.25 : -0.15);
+    kit.box(0.22, 0.04, 0.16, BOOKS[1], v(0.3, 0.02, 0.08), g, 1.02).rotation.y = 0.6; // one lying open-ish beside
+    return { object: g };
+  },
 };
 
 export function buildPrefab(id: PrefabId, ctx: PrefabContext): PrefabResult { return builders[id](ctx); }
