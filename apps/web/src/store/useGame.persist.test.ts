@@ -19,11 +19,28 @@ describe("useGame persistence (IndexedDB, end to end)", () => {
     s.taskAction({ type: "add", title: "New after upgrade" });
     await new Promise((r) => setTimeout(r, 20));
     const stored = JSON.parse((await idbStorage.getItem("olh-save-v1"))!);
-    expect(stored.version).toBe(1);
+    expect(stored.version).toBe(0);          // zustand envelope stays 0 for rollback compatibility
+    expect(stored.state.__schema).toBe(1);   // schema version lives inside the state
     expect(stored.state.tasks).toHaveLength(4);
 
     const index = JSON.parse((await idbStorage.getItem("olh-save-v1.backups"))!);
     expect(index).toHaveLength(1);
     expect(await idbStorage.getItem(index[0].key)).toBe(JSON.stringify(first));
+  });
+});
+
+describe("useGame persistence: save written by the M0 development build (envelope version 1)", () => {
+  it("keeps every setting, including the chosen character", async () => {
+    const { idbStorage } = await import("@/systems/persistence/idbStorage");
+    const { useGame } = await import("./useGame");
+    const devSave = { state: { ...first.state, settings: { ...first.state.settings, renderMode: "3d", characterId: "girl-five" } }, version: 1 };
+    await idbStorage.setItem("olh-save-v1", JSON.stringify(devSave));
+    await useGame.persist.rehydrate();
+    expect(useGame.getState().settings.characterId).toBe("girl-five");
+    expect(useGame.getState().tasks).toHaveLength(3);
+    useGame.getState().setSettings({ musicVolume: 0.5 });
+    await new Promise((r) => setTimeout(r, 20));
+    const stored = JSON.parse((await idbStorage.getItem("olh-save-v1"))!);
+    expect(stored).toMatchObject({ version: 0, state: { __schema: 1, settings: { characterId: "girl-five", musicVolume: 0.5 } } });
   });
 });

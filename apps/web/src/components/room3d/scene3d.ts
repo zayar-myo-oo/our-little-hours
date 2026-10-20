@@ -6,7 +6,8 @@ import { paletteFor } from "./timeOfDay";
 import { makeKit, v } from "./kit";
 import { buildEnvironment } from "./environment";
 import { pauseWhenHidden } from "@/lib/visibility";
-import { mirrorSign, seatedTypingPose, seatLift, mtoonDimFactor, SEAT_TOP_Y } from "@/components/world/character/vrmPose";
+import { mirrorSign, seatedTypingPose, mtoonDimFactor } from "@/components/world/character/vrmPose";
+import { applyPose, placeOnSeat, dimMaterials } from "@/components/world/character/vrmApply";
 
 export interface Scene3DHandle { setState(s: Availability): void; setReducedMotion(r: boolean): void; setRain(on: boolean): void; destroy(): void; hasVrm: boolean }
 
@@ -98,26 +99,12 @@ export async function createScene3D(host: HTMLElement, opts: { reducedMotion: bo
       const gltf = await loader.loadAsync(opts.modelUrl);
       const loaded = gltf.userData.vrm;
       VRMUtils.rotateVRM0(loaded);
-      const bone = (n: string) => loaded.humanoid.getNormalizedBoneNode(n) as THREE.Object3D | null;
-      // Seated typing pose (pure math in world/character/vrmPose.ts; VRM 0.x is mirrored there).
+      // Seated typing pose + seat fit + brightness (helpers in components/world/character; VRM 0.x mirrored there).
       flip = mirrorSign(loaded.meta?.metaVersion);
-      for (const [b, x, y, z] of seatedTypingPose(loaded.meta?.metaVersion)) bone(b)?.rotation.set(x, y, z);
-      loaded.humanoid.update?.();
-      loaded.scene.updateMatrixWorld(true);
-      const hipY = bone("hips")?.getWorldPosition(new THREE.Vector3()).y ?? 0.9;
-      // Fit seat height to the model so hands reach the keyboard (desk top is 0.775).
-      const handY = bone("leftHand")?.getWorldPosition(new THREE.Vector3()).y ?? hipY;
-      const lift = seatLift(hipY, handY);
-      loaded.scene.position.set(0, SEAT_TOP_Y + lift - hipY, VRM_Z);
+      applyPose(loaded.humanoid, seatedTypingPose(loaded.meta?.metaVersion));
+      const lift = placeOnSeat(loaded.scene, loaded.humanoid, VRM_Z);
       ch.children[0].position.y += lift; ch.children[1].position.y += lift;
-      // MToon (VRoid) materials are tuned for ~1.0 total light; the room is brighter by day, so dim the model to match.
-      const k = mtoonDimFactor(pal.ambient, pal.sunIntensity);
-      loaded.scene.traverse((o: THREE.Object3D) => {
-        const mesh = o as THREE.Mesh;
-        for (const m of (Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : []) as (THREE.Material & { color?: THREE.Color; shadeColorFactor?: THREE.Color })[]) {
-          m.color?.multiplyScalar(k); m.shadeColorFactor?.multiplyScalar(k);
-        }
-      });
+      dimMaterials(loaded.scene, mtoonDimFactor(pal.ambient, pal.sunIntensity));
       scene.add(loaded.scene);
       if (loaded.lookAt) loaded.lookAt.target = camera;
       ch.children.forEach((c) => { if (c !== ch.children[0] && c !== ch.children[1]) c.visible = false; }); // keep the chair

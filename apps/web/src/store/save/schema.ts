@@ -6,8 +6,14 @@ import type { ChatMessage } from "@/systems/chat/types";
 import type { StoryProgress } from "@/systems/story/engine";
 
 export const SAVE_KEY = "olh-save-v1";
-/** v0 = legacy saves written before versioning existed (zustand default). v1 = validated schema. */
+/** Schema version, stored INSIDE the state as `__schema`. v0 = legacy saves (no field). v1 = validated schema. */
 export const SAVE_VERSION = 1;
+export const SCHEMA_FIELD = "__schema";
+/**
+ * zustand's own envelope version. Kept at 0 forever so pre-M0 builds (which use version 0 and no migrate)
+ * can still read new saves after a rollback instead of resetting them to defaults.
+ */
+export const ENVELOPE_VERSION = 0;
 
 export interface Settings {
   reducedMotion: "system" | "on" | "off";
@@ -155,6 +161,17 @@ export function migrateSave(persisted: unknown, fromVersion: number, ctx: Saniti
   return sanitizeSave(s, ctx);
 }
 
+/**
+ * Schema version of a persisted state. Prefers `state.__schema`; falls back to the zustand envelope version
+ * (development builds of M0 briefly wrote envelope version 1); no information means legacy v0.
+ * Returns null if the stored version is present but invalid.
+ */
+export function schemaVersionOf(state: unknown, envelopeVersion: unknown): number | null {
+  if (isObj(state) && state[SCHEMA_FIELD] !== undefined) return isInt(state[SCHEMA_FIELD], 0, 1_000_000) ? state[SCHEMA_FIELD] : null;
+  if (envelopeVersion === undefined) return 0;
+  return isInt(envelopeVersion, 0, 1_000_000) ? envelopeVersion : null;
+}
+
 export type RawKind = "empty" | "current" | "legacy" | "future" | "malformed";
 /** Classify a raw string from storage without modifying it. */
 export function inspectRaw(raw: string | null | undefined): { kind: RawKind; version: number | null } {
@@ -162,8 +179,7 @@ export function inspectRaw(raw: string | null | undefined): { kind: RawKind; ver
   let parsed: unknown;
   try { parsed = JSON.parse(raw); } catch { return { kind: "malformed", version: null }; }
   if (!isObj(parsed) || !isObj(parsed.state)) return { kind: "malformed", version: null };
-  const version = parsed.version === undefined ? 0 : parsed.version;
-  if (!Number.isInteger(version) || (version as number) < 0) return { kind: "malformed", version: null };
-  const v = version as number;
+  const v = schemaVersionOf(parsed.state, parsed.version);
+  if (v === null) return { kind: "malformed", version: null };
   return { kind: v === SAVE_VERSION ? "current" : v < SAVE_VERSION ? "legacy" : "future", version: v };
 }

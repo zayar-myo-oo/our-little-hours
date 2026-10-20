@@ -41,6 +41,17 @@ describe("versioned storage", () => {
     await vs.removeItem(KEY);
     expect(data.get(KEY)).toBe(legacyRaw);
   });
+
+  it("never writes over a save from a newer app version", async () => {
+    const newer = JSON.stringify({ state: { __schema: 99, tasks: [] }, version: 0 });
+    const { storage, data } = memoryStorage({ [KEY]: newer });
+    const vs = createVersionedStorage(storage);
+    expect(await vs.getItem(KEY)).toBe(newer);
+    expect(vs.isReadOnly(KEY)).toBe(true);
+    await vs.setItem(KEY, "older build write");
+    expect(data.get(KEY)).toBe(newer);
+    expect((await listBackups(storage, KEY))[0].reason).toBe("future");
+  });
 });
 
 describe("backups", () => {

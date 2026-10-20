@@ -83,7 +83,10 @@ describe("inspectRaw", () => {
     expect(inspectRaw(null).kind).toBe("empty");
     expect(inspectRaw(JSON.stringify(first)).kind).toBe("legacy");
     expect(inspectRaw(JSON.stringify({ state: {} })).kind).toBe("legacy"); // no version field = v0
-    expect(inspectRaw(JSON.stringify({ state: {}, version: SAVE_VERSION })).kind).toBe("current");
+    expect(inspectRaw(JSON.stringify({ state: {}, version: SAVE_VERSION })).kind).toBe("current"); // M0 dev envelope
+    expect(inspectRaw(JSON.stringify({ state: { __schema: SAVE_VERSION }, version: 0 })).kind).toBe("current");
+    expect(inspectRaw(JSON.stringify({ state: { __schema: SAVE_VERSION + 1 }, version: 0 }))).toEqual({ kind: "future", version: SAVE_VERSION + 1 });
+    expect(inspectRaw(JSON.stringify({ state: { __schema: "one" }, version: 0 })).kind).toBe("malformed");
     expect(inspectRaw(JSON.stringify(future))).toEqual({ kind: "future", version: 99 });
     expect(inspectRaw("{not json").kind).toBe("malformed");
     expect(inspectRaw(JSON.stringify({ version: 1 })).kind).toBe("malformed");

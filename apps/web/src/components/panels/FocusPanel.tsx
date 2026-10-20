@@ -1,4 +1,6 @@
 "use client";
+import { memo } from "react";
+import { useNow } from "@/lib/useNow";
 import { useShallow } from "zustand/react/shallow";
 import { selectFocus } from "@/store/selectors";
 import { useGame } from "@/store/useGame";
@@ -7,7 +9,8 @@ import { Btn, Panel } from "./ui";
 
 const LABEL: Record<Phase, string> = { focus: "Focus", shortBreak: "Short break", longBreak: "Long break" };
 
-export function FocusPanel({ now }: { now: number }) {
+function FocusPanelView() {
+  const now = useNow(500);
   const { timer, config, timerAction, setConfig } = useGame(useShallow(selectFocus));
   return (
     <Panel title="Focus">
@@ -36,3 +39,5 @@ export function FocusPanel({ now }: { now: number }) {
     </Panel>
   );
 }
+
+export const FocusPanel = memo(FocusPanelView);

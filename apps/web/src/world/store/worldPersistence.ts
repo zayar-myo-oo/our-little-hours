@@ -25,7 +25,7 @@ export interface WorldPersistence<Sim = unknown> {
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
-export function createWorldPersistence<Sim = unknown>(storage: StateStorage, validateSim: (s: unknown) => s is Sim = (_s): _s is Sim => true): WorldPersistence<Sim> {
+export function createWorldPersistence<Sim = unknown>(storage: StateStorage, validateSim: (s: unknown) => s is Sim = (s): s is Sim => s !== undefined): WorldPersistence<Sim> {
   if ((WORLD_KEY as string) === SAVE_KEY) throw new Error("world key must differ from the game save key");
   let futureLocked = false; // never overwrite a save written by a newer app version
   return {

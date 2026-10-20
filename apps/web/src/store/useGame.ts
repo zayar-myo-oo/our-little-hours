@@ -7,7 +7,7 @@ import * as T from "@/systems/productivity/tasks";
 import type { ChatMessage } from "@/systems/chat/types";
 import * as S from "@/systems/story/engine";
 import story from "@content/story/the-unfinished-page.json";
-import { SAVE_KEY, SAVE_VERSION, migrateSave, sanitizeSave, type SanitizeContext, type Settings } from "./save/schema";
+import { SAVE_KEY, SAVE_VERSION, SCHEMA_FIELD, ENVELOPE_VERSION, migrateSave, schemaVersionOf, type SanitizeContext, type Settings } from "./save/schema";
 import { createVersionedStorage, listBackups, restoreBackup } from "./save/recovery";
 
 export const STORY = story as S.Story;
@@ -54,6 +54,9 @@ const versionedStorage = createVersionedStorage(idbStorage, {
   onBackup: ({ key, kind, version }) => console.info(`[save] ${kind} save (version ${version ?? "?"}) backed up to "${key}" before migration`),
 });
 
+/** True when the save was written by a newer app version: this build reads it but won't overwrite it. */
+export const saveIsReadOnly = () => versionedStorage.isReadOnly(SAVE_KEY);
+
 /** Manual recovery from the browser console: `await olhRecovery.list()`, `await olhRecovery.restore(key)` then reload. */
 if (typeof window !== "undefined") {
   (window as unknown as { olhRecovery: unknown }).olhRecovery = {
@@ -92,19 +95,19 @@ export const useGame = create<GameState>()(
     }),
     {
       name: SAVE_KEY,
-      version: SAVE_VERSION,
+      version: ENVELOPE_VERSION, // stays 0 so older builds can still read the save (see M0_ROLLBACK_AND_RECOVERY.md)
       storage: createJSONStorage(() => versionedStorage),
-      partialize: ({ config, timer, tasks, chat, story, settings }) => ({ config, timer, tasks, chat, story, settings }),
-      // Runs only when the stored version differs (legacy v0 or a future version). The raw save is already backed up.
-      migrate: (persisted, fromVersion) => {
-        const { save, issues } = migrateSave(persisted, fromVersion, saveContext());
-        if (issues.length) console.warn("[save] migration repaired:", issues);
-        return save as unknown as GameState;
-      },
-      // Runs on every load: validate field by field so one bad value never discards the rest of the save.
+      partialize: ({ config, timer, tasks, chat, story, settings }) => ({ [SCHEMA_FIELD]: SAVE_VERSION, config, timer, tasks, chat, story, settings }),
+      // Only called if the envelope version differs (e.g. a dev build of M0 wrote 1). The raw save is already backed up.
+      // Only tags the state with that envelope version; the real migration happens in merge below.
+      migrate: (persisted, envelopeVersion) => ({ ...(persisted as object), __envelope: envelopeVersion }) as unknown as GameState,
+      // Runs on every load: forward-migrate by the schema version stored inside the state, then validate field by
+      // field so one bad value never discards the rest of the save.
       merge: (persisted, current) => {
         if (persisted === undefined || persisted === null) return current;
-        const { save, issues } = sanitizeSave(persisted, saveContext());
+        const p = persisted as Record<string, unknown>;
+        const from = schemaVersionOf(p, p.__envelope) ?? 0;
+        const { save, issues } = migrateSave(p, from, saveContext());
         if (issues.length) console.warn("[save] load repaired:", issues);
         return { ...current, ...save };
       },

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { selectSettings } from "@/store/selectors";
 import { useGame } from "@/store/useGame";
@@ -33,10 +33,11 @@ export function useMusic() {
     if (playing) { setError(null); a.play().catch(() => { setError("Playback was blocked or failed."); setPlaying(false); }); } else a.pause();
   }, [index, playing, tracks]);
 
-  return { tracks, index, setIndex, playing, setPlaying, error };
+  // Stable object so the memoized MusicPanel only re-renders when playback state changes.
+  return useMemo(() => ({ tracks, index, setIndex, playing, setPlaying, error }), [tracks, index, playing, error]);
 }
 
-export function MusicPanel({ music }: { music: ReturnType<typeof useMusic> }) {
+function MusicPanelView({ music }: { music: ReturnType<typeof useMusic> }) {
   const { settings, setSettings } = useGame(useShallow(selectSettings));
   const ambient = getAmbient();
   const { tracks, index, setIndex, playing, setPlaying, error } = music;
@@ -70,3 +71,5 @@ export function MusicPanel({ music }: { music: ReturnType<typeof useMusic> }) {
     </Panel>
   );
 }
+
+export const MusicPanel = memo(MusicPanelView);

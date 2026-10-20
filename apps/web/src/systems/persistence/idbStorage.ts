@@ -31,7 +31,7 @@ export const idbStorage: StateStorage = {
   },
   async setItem(k, v) {
     if (hasIdb()) try { await tx("readwrite", (s) => s.put(v, k)); return; } catch { /* fall through */ }
-    const l = ls(); l ? l.setItem(k, v) : memory.set(k, v);
+    const l = ls(); if (l) l.setItem(k, v); else memory.set(k, v);
   },
   async removeItem(k) {
     if (hasIdb()) try { await tx("readwrite", (s) => s.delete(k)); return; } catch { /* fall through */ }

@@ -95,7 +95,7 @@ export default function Home() {
 
       {hydrated && g.tab && (
         <div className="absolute inset-x-0 bottom-24 flex justify-center px-3 sm:bottom-28 sm:justify-end sm:px-6">
-          {g.tab === "focus" && <FocusPanel now={now} />}
+          {g.tab === "focus" && <FocusPanel />}
           {g.tab === "tasks" && <TasksPanel />}
           {g.tab === "music" && <MusicPanel music={music} />}
           {g.tab === "chat" && <ChatPanel ctx={ctx} name={charName} />}

@@ -5,7 +5,7 @@
 | | Before M0 | After M0 |
 |---|---|---|
 | Key | `olh-save-v1` (IndexedDB `our-little-hours` / `kv`, falling back to localStorage, then memory) | **same key**, same database |
-| Stored shape | `{ "state": {...}, "version": 0 }` (zustand default, no versioning) | `{ "state": {...}, "version": 1 }`, same `state` shape |
+| Stored shape | `{ "state": {...}, "version": 0 }` (zustand default, no versioning) | `{ "state": { "__schema": 1, ... }, "version": 0 }`: the schema version lives **inside** the state; the zustand envelope stays 0 |
 | Validation | Only the story node was checked | Every field is validated individually (`src/store/save/schema.ts`); one bad value never discards the rest |
 | Backups | none | The raw save is copied before any migration, future-version read or malformed read |
 | World data | none | Interface only for `olh-world-v1` (`src/world/store/worldPersistence.ts`). **Nothing is written yet.** |
@@ -18,7 +18,7 @@
    - `empty`: the app starts fresh.
    - `current` (v1): passed through with no backup.
    - `legacy` (v0 or missing version): **backed up**, then passed to zustand, which calls `migrate`.
-   - `future` (> v1): **backed up**, then known fields are read best-effort.
+   - `future` (> v1): **backed up**, then known fields are read best-effort. The key becomes **read-only for the session**, so an older build never overwrites a newer save. Settings shows a notice.
    - `malformed` (not JSON, no `state`, bad version): **backed up**, then hidden from zustand, so the app starts with defaults.
 2. If the backup itself fails (e.g. a quota error), the storage goes **read-only for that key** for the session. The app runs on defaults and never overwrites the original.
 3. `merge` runs `sanitizeSave` on every load and logs repairs as `[save] load repaired: …`.
@@ -40,13 +40,12 @@ Restoring is reversible, because the save being replaced is itself backed up wit
 
 ## Rolling back the M0 code
 
-M0 is backward-compatible in one direction only:
+**Rolling back to a pre-M0 build is safe.** M0 deliberately keeps zustand's envelope `version` at `0`, the value pre-M0 builds expect, and stores the schema version as `state.__schema`. A pre-M0 build reads the save normally and ignores the unknown `__schema` field. This is covered by `src/store/rollbackCompat.test.ts`, which runs the exact pre-M0 persist config against an M0 save. That test also shows why the envelope must stay 0: a version-1 envelope *would* make a pre-M0 build reset to defaults.
 
-- **Rolling back to pre-M0 code is NOT safe as-is.** The old build has `version: 0` and no `migrate`. When it reads a v1 save, zustand logs "couldn't be migrated" and starts with **defaults**, and the old build then **overwrites the v1 save with those defaults** on the first change.
-  → Before rolling back, ship this one-line patch to the old build: add `version: 1` to its persist options (no migrate needed; the `state` shape is identical).
-  → If an unpatched rollback already happened, run `olhRecovery.restore(...)` with the `legacy` backup (the original v0 data, byte-for-byte). Changes made after the M0 upgrade but before the rollback are only recoverable if a later backup exists. (`olhRecovery` only exists in M0+ builds. On an older build, open DevTools → Application → IndexedDB → `our-little-hours` → `kv`, and copy the backup's value into `olh-save-v1`.)
-- Git: M0 lives on `feat/living-world-m0`. Reverting means not merging it, or `git revert` of its commit(s).
-- The Living World flag (`livingWorld`) is **off by default** and gates nothing visible in M0, so no flag rollback is needed.
+- After a rollback and a later re-upgrade, saves written by the old build simply have no `__schema` again. They're treated as legacy v0, backed up and migrated, which is harmless.
+- Git: M0 lives on `feat/living-world-m0`. Reverting means not merging it, or `git revert` of its commits.
+- The Living World flag (`livingWorld`) is **off by default** and gates nothing visible in M0.
+- Builds from M0 development briefly wrote envelope `version: 1`. Those saves are read correctly (the envelope version is used when `__schema` is missing) and rewritten in the compatible format (`src/store/useGame.persist.test.ts`).
 
 ## Feature flag
 
@@ -54,4 +53,4 @@ M0 is backward-compatible in one direction only:
 
 ## Rendering pause
 
-`src/lib/visibility.ts → pauseWhenHidden` stops the three.js RAF loop and the Pixi ticker while the tab is hidden, and resumes when it's visible again (the three.js clock delta is reset so animations don't jump). The Pomodoro timer stores absolute timestamps (`endsAt`), so its correctness doesn't depend on rendering or on interval throttling.
+`src/lib/visibility.ts → pauseWhenHidden` stops the three.js RAF loop and the Pixi ticker while the tab is hidden, and resumes when it's visible again (the three.js clock delta is reset so animations don't jump). The Pomodoro timer stores absolute timestamps (`endsAt`), so its correctness doesn't depend on rendering or on interval throttling. Verified in the browser: 0 animation frames while hidden, resumed when visible.
