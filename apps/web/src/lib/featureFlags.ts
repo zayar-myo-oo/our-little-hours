@@ -1,9 +1,9 @@
-// Feature flags. `livingWorld` is OFF by default and has no visible effect in M0.
+// Feature flags. `livingWorld` is ON by default since the release (turn off: ?ff=-livingWorld or NEXT_PUBLIC_FF_LIVING_WORLD=0).
 // Precedence: URL (?ff=livingWorld or ?ff=-livingWorld) > localStorage "olh-ff" > env NEXT_PUBLIC_FF_LIVING_WORLD > default.
 export type FeatureFlag = "livingWorld";
 export type Flags = Record<FeatureFlag, boolean>;
 
-export const DEFAULT_FLAGS: Flags = { livingWorld: false };
+export const DEFAULT_FLAGS: Flags = { livingWorld: true };
 const ALL = Object.keys(DEFAULT_FLAGS) as FeatureFlag[];
 const STORAGE_KEY = "olh-ff";
 
