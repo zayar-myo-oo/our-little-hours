@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useGame, type Tab } from "@/store/useGame";
 import { currentBlock, nextChange, fmtMinutes } from "@/systems/character/schedule";
 import { formatMs, remaining } from "@/systems/productivity/pomodoro";
@@ -64,7 +64,9 @@ export default function Home() {
   const block = currentBlock(date), next = nextChange(date);
   const reduced = g.settings.reducedMotion === "on" || (g.settings.reducedMotion === "system" && systemReduced);
   const charName = models?.find((m) => m.id === g.settings.characterId && m.available)?.name ?? "Yuzu";
-  const ctx = { name: charName, availability: block.state, activity: block.activity, tasksOpen: g.tasks.filter((t) => !t.done).length, focusSessions: g.timer.completedFocus, hour: date.getHours() };
+  const tasksOpen = g.tasks.filter((t) => !t.done).length, hour = date.getHours();
+  const ctx = useMemo(() => ({ name: charName, availability: block.state, activity: block.activity, tasksOpen, focusSessions: g.timer.completedFocus, hour }),
+    [charName, block.state, block.activity, tasksOpen, g.timer.completedFocus, hour]);
   const dot = block.state === "AVAILABLE" ? "bg-emerald-400" : block.state === "BUSY" ? "bg-amber-400" : "bg-indigo-400";
 
   return (

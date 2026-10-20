@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { selectSettings } from "@/store/selectors";
 import { useGame } from "@/store/useGame";
 import { loadManifest, nextIndex, type Track } from "@/systems/audio/music";
 import { getAmbient } from "@/systems/audio/ambient";
@@ -35,7 +37,7 @@ export function useMusic() {
 }
 
 export function MusicPanel({ music }: { music: ReturnType<typeof useMusic> }) {
-  const { settings, setSettings } = useGame();
+  const { settings, setSettings } = useGame(useShallow(selectSettings));
   const ambient = getAmbient();
   const { tracks, index, setIndex, playing, setPlaying, error } = music;
   const n = tracks?.length ?? 0;

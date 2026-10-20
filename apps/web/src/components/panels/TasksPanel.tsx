@@ -1,11 +1,13 @@
 "use client";
-import { useState } from "react";
+import { useState, memo } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { selectTasks } from "@/store/selectors";
 import { useGame } from "@/store/useGame";
 import { progress } from "@/systems/productivity/tasks";
 import { Btn, Panel } from "./ui";
 
-export function TasksPanel() {
-  const { tasks, taskAction } = useGame();
+function TasksPanelView() {
+  const { tasks, taskAction } = useGame(useShallow(selectTasks));
   const [text, setText] = useState("");
   const p = progress(tasks);
   return (
@@ -31,3 +33,5 @@ export function TasksPanel() {
     </Panel>
   );
 }
+
+export const TasksPanel = memo(TasksPanelView);

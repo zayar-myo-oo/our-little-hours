@@ -1,11 +1,14 @@
 "use client";
+import { memo } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { selectSettingsPanel } from "@/store/selectors";
 import { useGame } from "@/store/useGame";
 import { Btn, Panel } from "./ui";
 import { CharacterPicker } from "./CharacterPicker";
 import type { CharacterModel } from "@/systems/character/models";
 
-export function SettingsPanel({ apiStatus, models, modelError }: { apiStatus: string; models: CharacterModel[] | null; modelError: string | null }) {
-  const { settings, setSettings, resetAll } = useGame();
+function SettingsPanelView({ apiStatus, models, modelError }: { apiStatus: string; models: CharacterModel[] | null; modelError: string | null }) {
+  const { settings, setSettings, resetAll } = useGame(useShallow(selectSettingsPanel));
   const askNotify = async () => {
     if (!("Notification" in window)) return alert("Notifications are not supported here.");
     const p = await Notification.requestPermission();
@@ -45,3 +48,5 @@ export function SettingsPanel({ apiStatus, models, modelError }: { apiStatus: st
     </Panel>
   );
 }
+
+export const SettingsPanel = memo(SettingsPanelView);

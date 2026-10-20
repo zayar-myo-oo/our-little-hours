@@ -7,18 +7,13 @@ import * as T from "@/systems/productivity/tasks";
 import type { ChatMessage } from "@/systems/chat/types";
 import * as S from "@/systems/story/engine";
 import story from "@content/story/the-unfinished-page.json";
+import { SAVE_KEY, SAVE_VERSION, migrateSave, sanitizeSave, type SanitizeContext, type Settings } from "./save/schema";
+import { createVersionedStorage, listBackups, restoreBackup } from "./save/recovery";
 
 export const STORY = story as S.Story;
 export type Tab = "focus" | "tasks" | "music" | "chat" | "story" | "settings";
 
-export interface Settings {
-  reducedMotion: "system" | "on" | "off";
-  renderMode: "3d" | "2d";
-  characterId: string;
-  rainVolume: number; roomVolume: number; musicVolume: number;
-  chatProvider: "mock" | "ollama"; ollamaUrl: string; ollamaModel: string;
-  notifications: boolean;
-}
+export type { Settings };
 
 interface GameState {
   tab: Tab | null;
@@ -50,6 +45,23 @@ const fresh = () => ({
   chat: [] as ChatMessage[], story: S.begin(STORY), settings: DEFAULT_SETTINGS,
 });
 
+const saveContext = (): SanitizeContext => {
+  const d = fresh();
+  return { defaults: { config: d.config, timer: d.timer, tasks: d.tasks, chat: d.chat, story: d.story, settings: d.settings }, isStoryNode: (id) => !!STORY.nodes[id], storyId: STORY.id };
+};
+
+const versionedStorage = createVersionedStorage(idbStorage, {
+  onBackup: ({ key, kind, version }) => console.info(`[save] ${kind} save (version ${version ?? "?"}) backed up to "${key}" before migration`),
+});
+
+/** Manual recovery from the browser console: `await olhRecovery.list()`, `await olhRecovery.restore(key)` then reload. */
+if (typeof window !== "undefined") {
+  (window as unknown as { olhRecovery: unknown }).olhRecovery = {
+    list: () => listBackups(idbStorage, SAVE_KEY),
+    restore: (key: string) => restoreBackup(idbStorage, SAVE_KEY, key),
+  };
+}
+
 export const useGame = create<GameState>()(
   persist(
     (set, get) => ({
@@ -79,13 +91,22 @@ export const useGame = create<GameState>()(
       resetAll: () => set({ ...fresh() }),
     }),
     {
-      name: "olh-save-v1",
-      storage: createJSONStorage(() => idbStorage),
+      name: SAVE_KEY,
+      version: SAVE_VERSION,
+      storage: createJSONStorage(() => versionedStorage),
       partialize: ({ config, timer, tasks, chat, story, settings }) => ({ config, timer, tasks, chat, story, settings }),
+      // Runs only when the stored version differs (legacy v0 or a future version). The raw save is already backed up.
+      migrate: (persisted, fromVersion) => {
+        const { save, issues } = migrateSave(persisted, fromVersion, saveContext());
+        if (issues.length) console.warn("[save] migration repaired:", issues);
+        return save as unknown as GameState;
+      },
+      // Runs on every load: validate field by field so one bad value never discards the rest of the save.
       merge: (persisted, current) => {
-        const p = (persisted ?? {}) as Partial<GameState>;
-        const ok = p.story && STORY.nodes[p.story.nodeId];
-        return { ...current, ...p, settings: { ...current.settings, ...p.settings }, story: ok ? p.story! : current.story };
+        if (persisted === undefined || persisted === null) return current;
+        const { save, issues } = sanitizeSave(persisted, saveContext());
+        if (issues.length) console.warn("[save] load repaired:", issues);
+        return { ...current, ...save };
       },
     },
   ),

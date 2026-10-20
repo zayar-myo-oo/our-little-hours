@@ -1,6 +1,7 @@
 // Original procedural placeholder art drawn with PixiJS Graphics. Scene space: 1600x1000.
 import { Application, Container, Graphics, Text } from "pixi.js";
 import type { Availability } from "@/systems/character/schedule";
+import { pauseWhenHidden } from "@/lib/visibility";
 
 export const W = 1600, H = 1000;
 export interface SceneHandle { setState(s: Availability): void; setReducedMotion(r: boolean): void; destroy(): void }
@@ -175,10 +176,12 @@ export async function createScene(host: HTMLElement, opts: { reducedMotion: bool
     }
   });
 
+  const stopWatching = pauseWhenHidden({ pause: () => app.ticker.stop(), resume: () => app.ticker.start() });
+
   return {
     setState(s) { state = s; applyState(); },
     setReducedMotion(r) { reduced = r; },
-    destroy() { app.renderer.off("resize", layout); app.destroy(true, { children: true }); },
+    destroy() { stopWatching(); app.renderer.off("resize", layout); app.destroy(true, { children: true }); },
   };
 }
 

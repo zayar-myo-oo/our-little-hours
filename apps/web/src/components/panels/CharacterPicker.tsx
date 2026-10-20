@@ -1,9 +1,12 @@
 "use client";
+import { memo } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { selectSettings } from "@/store/selectors";
 import { useGame } from "@/store/useGame";
 import { PLACEHOLDER_ID, thumbUrl, type CharacterModel } from "@/systems/character/models";
 
-export function CharacterPicker({ models, loadError }: { models: CharacterModel[] | null; loadError: string | null }) {
-  const { settings, setSettings } = useGame();
+function CharacterPickerView({ models, loadError }: { models: CharacterModel[] | null; loadError: string | null }) {
+  const { settings, setSettings } = useGame(useShallow(selectSettings));
   const options: (CharacterModel & { isPlaceholder?: boolean })[] = [{ id: PLACEHOLDER_ID, name: "Placeholder", file: "", available: true, isPlaceholder: true }, ...(models ?? [])];
   return (
     <div className="mb-4">
@@ -34,3 +37,5 @@ export function CharacterPicker({ models, loadError }: { models: CharacterModel[
     </div>
   );
 }
+
+export const CharacterPicker = memo(CharacterPickerView);

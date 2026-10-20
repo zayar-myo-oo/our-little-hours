@@ -1,11 +1,14 @@
 "use client";
+import { memo } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { selectStory } from "@/store/selectors";
 import { useGame, STORY } from "@/store/useGame";
 import { renderText } from "@/systems/story/engine";
 import { Btn, Panel } from "./ui";
 
 /** "@companion" in story content is replaced with the currently chosen character's name. */
-export function StoryPanel({ name }: { name: string }) {
-  const { story, storyAdvance, storyRestart } = useGame();
+function StoryPanelView({ name }: { name: string }) {
+  const { story, storyAdvance, storyRestart } = useGame(useShallow(selectStory));
   const node = STORY.nodes[story.nodeId];
   return (
     <Panel title={STORY.title}>
@@ -22,3 +25,5 @@ export function StoryPanel({ name }: { name: string }) {
     </Panel>
   );
 }
+
+export const StoryPanel = memo(StoryPanelView);
