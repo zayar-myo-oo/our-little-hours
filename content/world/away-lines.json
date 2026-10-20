@@ -1,0 +1,12 @@
+{
+  "title": "While you were away",
+  "intro": "{name} kept a gentle rhythm.",
+  "lines": {
+    "studying": "Studied at her desk for {duration}",
+    "reading": "Read in the armchair for {duration}",
+    "relaxing": "Took a cozy break in the armchair",
+    "tea": "Made tea {times}",
+    "window": "Watched the sky from the window",
+    "sleeping": "Slept well for {duration}"
+  }
+}

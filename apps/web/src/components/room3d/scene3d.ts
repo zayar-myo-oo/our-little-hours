@@ -5,6 +5,9 @@ import type { Availability } from "@/systems/character/schedule";
 import { paletteFor } from "./timeOfDay";
 import { makeKit, v } from "./kit";
 import { buildEnvironment } from "./environment";
+import { pauseWhenHidden } from "@/lib/visibility";
+import { mirrorSign, seatedTypingPose, mtoonDimFactor } from "@/components/world/character/vrmPose";
+import { applyPose, placeOnSeat, dimMaterials } from "@/components/world/character/vrmApply";
 
 export interface Scene3DHandle { setState(s: Availability): void; setReducedMotion(r: boolean): void; setRain(on: boolean): void; destroy(): void; hasVrm: boolean }
 
@@ -96,36 +99,12 @@ export async function createScene3D(host: HTMLElement, opts: { reducedMotion: bo
       const gltf = await loader.loadAsync(opts.modelUrl);
       const loaded = gltf.userData.vrm;
       VRMUtils.rotateVRM0(loaded);
-      const bone = (n: string) => loaded.humanoid.getNormalizedBoneNode(n) as THREE.Object3D | null;
-      // Seated typing pose on normalized bones. VRM 0.x models are rotated 180° by rotateVRM0, so mirror X/Z rotations.
-      const f = loaded.meta?.metaVersion === "0" ? -1 : 1;
-      flip = f;
-      const set = (n: string, x: number, y: number, z: number) => bone(n)?.rotation.set(f * x, y, f * z);
-      for (const [side, k] of [["left", 1], ["right", -1]] as const) {
-        set(`${side}UpperLeg`, -Math.PI / 2, 0, 0);
-        set(`${side}LowerLeg`, Math.PI / 2, 0, 0);
-        set(`${side}UpperArm`, 0, -k * 0.9, -k * 0.85);
-        set(`${side}LowerArm`, 0, -k * 0.9, k * 0.8);
-        set(`${side}Hand`, 0, 0, k * 0.15);
-      }
-      set("spine", 0.12, 0, 0);
-      set("neck", 0.1, 0, 0);
-      loaded.humanoid.update?.();
-      loaded.scene.updateMatrixWorld(true);
-      const hipY = bone("hips")?.getWorldPosition(new THREE.Vector3()).y ?? 0.9;
-      // Fit seat height to the model so hands reach the keyboard (desk top is 0.775).
-      const handY = bone("leftHand")?.getWorldPosition(new THREE.Vector3()).y ?? hipY;
-      const seatLift = Math.max(0, 0.8 - (0.56 + handY - hipY));
-      loaded.scene.position.set(0, 0.56 + seatLift - hipY, VRM_Z);
-      ch.children[0].position.y += seatLift; ch.children[1].position.y += seatLift;
-      // MToon (VRoid) materials are tuned for ~1.0 total light; the room is brighter by day, so dim the model to match.
-      const k = Math.min(1, Math.max(0.45, 1.05 / (pal.ambient + pal.sunIntensity * 0.5)));
-      loaded.scene.traverse((o: THREE.Object3D) => {
-        const mesh = o as THREE.Mesh;
-        for (const m of (Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : []) as (THREE.Material & { color?: THREE.Color; shadeColorFactor?: THREE.Color })[]) {
-          m.color?.multiplyScalar(k); m.shadeColorFactor?.multiplyScalar(k);
-        }
-      });
+      // Seated typing pose + seat fit + brightness (helpers in components/world/character; VRM 0.x mirrored there).
+      flip = mirrorSign(loaded.meta?.metaVersion);
+      applyPose(loaded.humanoid, seatedTypingPose(loaded.meta?.metaVersion));
+      const lift = placeOnSeat(loaded.scene, loaded.humanoid, VRM_Z);
+      ch.children[0].position.y += lift; ch.children[1].position.y += lift;
+      dimMaterials(loaded.scene, mtoonDimFactor(pal.ambient, pal.sunIntensity));
       scene.add(loaded.scene);
       if (loaded.lookAt) loaded.lookAt.target = camera;
       ch.children.forEach((c) => { if (c !== ch.children[0] && c !== ch.children[1]) c.visible = false; }); // keep the chair
@@ -208,6 +187,10 @@ export async function createScene3D(host: HTMLElement, opts: { reducedMotion: bo
     if (composer) composer.render(dt); else renderer.render(scene, camera);
   };
   loop();
+  const stopWatching = pauseWhenHidden({
+    pause: () => { cancelAnimationFrame(raf); raf = 0; },
+    resume: () => { if (!raf) { clock.getDelta(); loop(); } }, // drop the hidden gap so animations don't jump
+  });
 
   return {
     hasVrm: !!vrm,
@@ -215,7 +198,7 @@ export async function createScene3D(host: HTMLElement, opts: { reducedMotion: bo
     setReducedMotion(r) { reduced = r; },
     setRain(on) { raining = on; applyState(); },
     destroy() {
-      cancelAnimationFrame(raf); ro.disconnect();
+      stopWatching(); cancelAnimationFrame(raf); ro.disconnect();
       scene.traverse((o) => { const m = o as THREE.Mesh; m.geometry?.dispose?.(); });
       kit.dispose(); composer?.dispose();
       renderer.dispose(); renderer.domElement.remove();

@@ -1,18 +1,20 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { selectChat } from "@/store/selectors";
 import { useGame } from "@/store/useGame";
 import { mockProvider } from "@/systems/chat/mockProvider";
 import { ollamaProvider } from "@/systems/chat/ollamaProvider";
 import type { ChatContext } from "@/systems/chat/types";
 import { Btn, Panel } from "./ui";
 
-export function ChatPanel({ ctx, name }: { ctx: ChatContext; name: string }) {
-  const { chat, pushChat, clearChat, settings } = useGame();
+function ChatPanelView({ ctx, name }: { ctx: ChatContext; name: string }) {
+  const { chat, pushChat, clearChat, chatProvider, ollamaUrl, ollamaModel } = useGame(useShallow(selectChat));
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [chat.length]);
-  const provider = settings.chatProvider === "ollama" ? ollamaProvider(settings.ollamaUrl, settings.ollamaModel) : mockProvider;
+  const provider = chatProvider === "ollama" ? ollamaProvider(ollamaUrl, ollamaModel) : mockProvider;
 
   const send = async () => {
     const input = text.trim(); if (!input || busy) return;
@@ -41,3 +43,5 @@ export function ChatPanel({ ctx, name }: { ctx: ChatContext; name: string }) {
     </Panel>
   );
 }
+
+export const ChatPanel = memo(ChatPanelView);

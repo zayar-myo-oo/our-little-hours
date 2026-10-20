@@ -1,11 +1,14 @@
 "use client";
-import { useGame } from "@/store/useGame";
+import { memo } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { selectSettingsPanel } from "@/store/selectors";
+import { useGame, saveIsReadOnly } from "@/store/useGame";
 import { Btn, Panel } from "./ui";
 import { CharacterPicker } from "./CharacterPicker";
 import type { CharacterModel } from "@/systems/character/models";
 
-export function SettingsPanel({ apiStatus, models, modelError }: { apiStatus: string; models: CharacterModel[] | null; modelError: string | null }) {
-  const { settings, setSettings, resetAll } = useGame();
+function SettingsPanelView({ apiStatus, models, modelError }: { apiStatus: string; models: CharacterModel[] | null; modelError: string | null }) {
+  const { settings, setSettings, resetAll } = useGame(useShallow(selectSettingsPanel));
   const askNotify = async () => {
     if (!("Notification" in window)) return alert("Notifications are not supported here.");
     const p = await Notification.requestPermission();
@@ -40,8 +43,13 @@ export function SettingsPanel({ apiStatus, models, modelError }: { apiStatus: st
         <span>Timer notifications: {settings.notifications ? "on" : "off"}</span>
         {settings.notifications ? <Btn onClick={() => setSettings({ notifications: false })}>Turn off</Btn> : <Btn onClick={askNotify}>Enable</Btn>}
       </div>
+      {saveIsReadOnly() && (
+        <p className="mb-3 rounded-lg bg-amber-glow/15 p-2 text-xs">Your save was made by a newer version of the app, so changes here aren&apos;t saved. Open the latest version to keep your progress.</p>
+      )}
       <p className="mb-3 text-xs opacity-60">Backend sync: {apiStatus}. Your progress is saved in this browser (IndexedDB).</p>
       <Btn onClick={() => confirm("Erase all local progress?") && resetAll()}>Reset local save</Btn>
     </Panel>
   );
 }
+
+export const SettingsPanel = memo(SettingsPanelView);

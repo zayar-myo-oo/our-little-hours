@@ -31,7 +31,8 @@ export function makeKit(root: THREE.Object3D) {
   }
   function canvasTex(w: number, h: number, draw: (g: CanvasRenderingContext2D, w: number, h: number) => void) {
     const c = document.createElement("canvas"); c.width = w; c.height = h;
-    draw(c.getContext("2d")!, w, h);
+    const g = c.getContext("2d");
+    if (g) draw(g, w, h); // no 2D context (tests, very old browsers): blank texture instead of a crash
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
     extra.push(t); return t;
   }

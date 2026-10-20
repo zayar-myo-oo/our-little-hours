@@ -4,12 +4,12 @@ export type AmbientKind = "rain" | "room";
 export class AmbientEngine {
   private ctx: AudioContext | null = null;
   private gains = new Map<AmbientKind, GainNode>();
-  readonly supported = typeof window !== "undefined" && !!(window.AudioContext || (window as any).webkitAudioContext);
+  readonly supported = typeof window !== "undefined" && !!(window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext);
 
   private ensure(): AudioContext | null {
     if (!this.supported) return null;
     if (!this.ctx) {
-      const AC = window.AudioContext || (window as any).webkitAudioContext;
+      const AC = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       this.ctx = new AC();
       this.gains.set("rain", this.buildRain(this.ctx));
       this.gains.set("room", this.buildRoom(this.ctx));
