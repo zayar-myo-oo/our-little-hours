@@ -76,6 +76,7 @@ export default function Home() {
       )}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-black/20" />
 
+      {hydrated && (
       <header className="pointer-events-none absolute left-0 right-0 top-0 flex items-start justify-between gap-3 p-4 pt-[max(1rem,env(safe-area-inset-top))] text-white [text-shadow:0_1px_8px_rgba(0,0,0,.45)]">
         <div>
           <p className="text-sm font-medium opacity-95">{date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" })}</p>
@@ -88,6 +89,7 @@ export default function Home() {
           <p className="text-[11px] opacity-90">{g.timer.running ? (g.timer.phase === "focus" ? "Working" : "Break") : "Paused"}</p>
         </button>
       </header>
+      )}
 
       {hydrated && g.tab && (
         <div className="absolute inset-x-0 bottom-24 flex justify-center px-3 sm:bottom-28 sm:justify-end sm:px-6">
