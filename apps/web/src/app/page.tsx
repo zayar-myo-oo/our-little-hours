@@ -14,6 +14,8 @@ import { getAmbient } from "@/systems/audio/ambient";
 import { loadModels, resolveModelUrl, type CharacterModel } from "@/systems/character/models";
 import { isFeatureEnabled } from "@/lib/featureFlags";
 import { useLivingWorld } from "@/world/runtime/useLivingWorld";
+import { AwayCard } from "@/components/world/AwayCard";
+import awayLines from "@content/world/away-lines.json";
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "focus", label: "Focus", icon: "⏳" }, { id: "tasks", label: "Tasks", icon: "✎" }, { id: "music", label: "Music", icon: "♪" },
@@ -32,7 +34,10 @@ export default function Home() {
   const [modelError, setModelError] = useState<string | null>(null);
   const [livingWorld, setLivingWorld] = useState(false);
   useEffect(() => { setLivingWorld(isFeatureEnabled("livingWorld")); }, []);
-  const world = useLivingWorld(livingWorld && g.settings.renderMode === "3d");
+  // Focus Together: only the end time of a running focus phase is shared with the simulation (read-only).
+  const focusUntil = g.timer.running && g.timer.phase === "focus" ? g.timer.endsAt : null;
+  const world = useLivingWorld(livingWorld && g.settings.renderMode === "3d", focusUntil);
+  const [awayDismissed, setAwayDismissed] = useState(false);
 
   useEffect(() => {
     const unsub = useGame.persist.onFinishHydration(() => setHydrated(true));
@@ -99,6 +104,10 @@ export default function Home() {
           <p className="text-[11px] opacity-90">{g.timer.running ? (g.timer.phase === "focus" ? "Working" : "Break") : "Paused"}</p>
         </button>
       </header>
+      )}
+
+      {hydrated && world.start?.away && !awayDismissed && (
+        <AwayCard summary={world.start.away} title={awayLines.title} intro={awayLines.intro.replace("{name}", charName)} onDismiss={() => setAwayDismissed(true)} />
       )}
 
       {hydrated && g.tab && (

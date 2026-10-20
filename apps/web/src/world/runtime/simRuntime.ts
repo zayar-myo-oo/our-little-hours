@@ -2,16 +2,18 @@
 // Never touches the game save (olh-save-v1) — that isolation is enforced by createWorldPersistence.
 import type { StateStorage } from "zustand/middleware";
 import { createWorldPersistence } from "@/world/store/worldPersistence";
-import { advance, catchUp, createInitialState, isSimState, snapshot, type SimContext, type SimSnapshot, type SimState } from "@/world/sim/engine";
+import { advance, catchUp, createInitialState, isSimState, joinFocus, leaveFocus, snapshot, type SimContext, type SimSnapshot, type SimState } from "@/world/sim/engine";
+import { summarizeAway, type AwayLines, type AwaySummary } from "@/world/sim/away";
 
 export type RuntimeStatus = "new" | "resumed" | "recovered" | "read-only";
-export interface StartResult { status: RuntimeStatus; awayMs: number; skippedMs: number; resumedFrom: SimState | null }
+export interface StartResult { status: RuntimeStatus; awayMs: number; skippedMs: number; resumedFrom: SimState | null; away: AwaySummary | null }
 export interface RuntimeDeps {
   storage: StateStorage;
   ctx: Omit<SimContext, "tzOffsetMin">;
   now: () => number;
   tzOffsetMin: () => number;
   newSeed: () => number;
+  awayLines?: AwayLines;
   /** false = never write (demo/fast-forward mode). */
   persist?: boolean;
 }
@@ -39,9 +41,11 @@ export class SimRuntime {
       this.state = createInitialState(this.deps.newSeed(), now, this.ctx());
       this.status = loaded.status === "future" ? "read-only" : loaded.status === "malformed" ? "recovered" : "new";
     }
+    // The absence is "consumed" by this save, so the same absence never produces a second card.
+    const away = resumedFrom && this.deps.awayLines ? summarizeAway(this.state.events, resumedFrom.now, now, this.deps.awayLines) : null;
     await this.save();
     this.emit();
-    return { status: this.status, awayMs: resumedFrom ? Math.max(0, now - resumedFrom.now) : 0, skippedMs, resumedFrom };
+    return { status: this.status, awayMs: resumedFrom ? Math.max(0, now - resumedFrom.now) : 0, skippedMs, resumedFrom, away };
   }
 
   /** Advance to the current time and notify listeners if what she's doing changed. */
@@ -50,6 +54,14 @@ export class SimRuntime {
     this.state = advance(this.state, this.deps.now(), this.ctx());
     this.emit();
     return this.state;
+  }
+
+  /** Focus Together: the user's Pomodoro focus phase runs until `until` (null = no focus session). */
+  setUserFocus(until: number | null) {
+    if (!this.state) return;
+    const now = this.deps.now();
+    this.state = until && until > now ? joinFocus(this.state, until, now, this.ctx()) : leaveFocus(this.state);
+    this.emit();
   }
 
   async save() {

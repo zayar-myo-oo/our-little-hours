@@ -149,3 +149,45 @@ describe("sim purity", () => {
     }
   });
 });
+
+describe("Focus Together", () => {
+  it("she walks to the desk and studies until the session ends, then returns to her routine", async () => {
+    const { joinFocus, leaveFocus } = await import("./engine");
+    let s = advance(createInitialState(11, MON, ctx), MON + 4 * H, ctx); // Monday 10:00
+    const start = MON + 4 * H + 60_000, until = start + 25 * 60_000;
+    s = joinFocus(s, until, start, ctx);
+    const segs: Segment[] = [s.current];
+    while (s.current.end < until) { s = advance(s, s.current.end, ctx); segs.push(s.current); }
+    const study = segs.find((g) => g.kind === "studying")!;
+    expect(study).toBeTruthy();
+    expect(study.anchor).toBe("desk");
+    expect(study.end).toBe(until);
+    expect(segs[0].kind === "studying" || segs[0].kind === "walking").toBe(true);
+    if (segs[0].kind === "walking") expect(segs[0].start).toBe(start); // leaves right away (unless already studying)
+    s = leaveFocus(advance(s, until, ctx));
+    s = advance(s, until + 3 * H, ctx);
+    expect(s.history.slice(-3).some((h) => h.kind !== "studying")).toBe(true); // back to her own life
+  });
+
+  it("doesn't wake her up, and doesn't join when she's exhausted", async () => {
+    const { joinFocus } = await import("./engine");
+    const night = advance(createInitialState(11, MON, ctx), MON + 21 * H, ctx); // 03:00
+    const after = joinFocus(night, MON + 21 * H + 25 * 60_000, MON + 21 * H, ctx);
+    expect(after.current.kind).toBe("sleeping");
+    const tired = advance(createInitialState(12, MON, ctx), MON + 4 * H, ctx);
+    tired.needs.energy = 5;
+    const t2 = joinFocus(tired, MON + 4 * H + 25 * 60_000, MON + 4 * H, ctx);
+    expect(t2.current.kind).not.toBe("studying");
+    expect(t2.current.kind === "walking" ? t2.current.next : t2.current.kind).not.toBe("studying");
+  });
+
+  it("is idempotent for the same session and never breaks the segment chain", async () => {
+    const { joinFocus } = await import("./engine");
+    const s0 = advance(createInitialState(13, MON, ctx), MON + 5 * H, ctx);
+    const until = MON + 5 * H + 25 * 60_000;
+    const a = joinFocus(s0, until, MON + 5 * H, ctx);
+    expect(joinFocus(a, until, MON + 5 * H + 10_000, ctx).current).toEqual(advance(a, MON + 5 * H + 10_000, ctx).current);
+    let s = a; let prevEnd = s.current.end;
+    for (let i = 0; i < 6; i++) { s = advance(s, s.current.end, ctx); expect(s.current.start).toBe(prevEnd); prevEnd = s.current.end; }
+  });
+});

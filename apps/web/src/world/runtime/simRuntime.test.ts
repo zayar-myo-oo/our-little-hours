@@ -59,3 +59,35 @@ describe("SimRuntime", () => {
     expect(seen.length).toBe(changes + 1);
   });
 });
+
+describe("SimRuntime: While you were away + Focus Together (integration)", () => {
+  const withLines = async () => (await import("@content/world/away-lines.json")).default as never;
+  it("returns a summary of the absence once, built from her real events", async () => {
+    const mem = memoryStorage(), clock = { t: MON };
+    const awayLines = await withLines();
+    await new SimRuntime({ ...deps(mem.storage, clock), awayLines }).start();
+    clock.t += 4 * H;
+    const b = new SimRuntime({ ...deps(mem.storage, clock), awayLines });
+    const r = await b.start();
+    expect(r.away).not.toBeNull();
+    const happened = new Set(b.current!.events.filter((e) => e.at > MON && e.at <= clock.t).map((e) => e.activity));
+    for (const h of r.away!.highlights) expect(happened.has(h.activity)).toBe(true);
+    expect(r.away!.highlights.length).toBeGreaterThanOrEqual(2);
+    expect(r.away!.highlights.length).toBeLessThanOrEqual(4);
+    clock.t += 1000; // reopen right away: the same absence must not show again
+    expect((await new SimRuntime({ ...deps(mem.storage, clock), awayLines }).start()).away).toBeNull();
+  });
+
+  it("Focus Together: starting a focus session sends her to the desk; ending it releases her", async () => {
+    const mem = memoryStorage(), clock = { t: MON + H }; // Monday 10:00
+    const rt = new SimRuntime(deps(mem.storage, clock));
+    await rt.start();
+    rt.setUserFocus(clock.t + 25 * 60_000);
+    const s = rt.snapshot()!;
+    expect(s.activity).toBe("studying");
+    expect(["walking", "studying"]).toContain(s.kind);
+    expect(rt.current!.focusWith).toEqual({ until: MON + H + 25 * 60_000 });
+    rt.setUserFocus(null);
+    expect(rt.current!.focusWith).toBeNull();
+  });
+});

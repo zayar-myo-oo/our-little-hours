@@ -44,6 +44,8 @@ export interface SimState {
   needs: Needs;
   history: { kind: ActivityId; anchor: AnchorId; start: number; end: number }[]; // recent, newest last (≤ 20)
   events: SimEvent[];        // for "while you were away" (≤ 200)
+  /** Focus Together: while set and in the future, she studies at the desk alongside the user's Pomodoro. */
+  focusWith?: { until: number } | null;
 }
 export interface SimContext { tzOffsetMin: number; defs: ActivitiesDoc; nav: NavGraph }
 
@@ -90,8 +92,11 @@ export function scoreActivity(s: SimState, id: ActivityId, at: number, ctx: SimC
   return score;
 }
 
+const focusing = (s: SimState, at: number) => !!s.focusWith && at < s.focusWith.until;
+
 function choose(s: SimState, at: number, ctx: SimContext): ActivityId {
   const options = allowedActivities(s, at, ctx);
+  if (focusing(s, at) && options.includes("studying")) return "studying";
   if (options.length === 1) return options[0];
   let best: ActivityId = options[0], bestScore = -Infinity;
   for (const id of options) {
@@ -109,6 +114,7 @@ function activityDuration(s: SimState, id: ActivityId, at: number, ctx: SimConte
     return Math.min(def.minutes[1] * 60_000, Math.max(def.minutes[0] * 60_000, msUntilMinute(at, ctx.tzOffsetMin, wakeMinute)));
   }
   const [r, next] = nextRandom(s.rng); s.rng = next;
+  if (id === "studying" && focusing(s, at)) return Math.max(60_000, s.focusWith!.until - at); // study until the session ends
   return Math.round((def.minutes[0] + r * (def.minutes[1] - def.minutes[0])) * 60_000);
 }
 
@@ -194,6 +200,30 @@ export function snapshot(s: SimState, ctx: SimContext): SimSnapshot {
     availability: c.kind === "sleeping" ? "SLEEPING" : "AVAILABLE",
     walk: c.kind === "walking" && c.path && c.from ? { from: c.from, path: c.path } : undefined,
   };
+}
+
+/**
+ * Focus Together: the user started a focus session ending at `until`. If she's awake and able to study, whatever
+ * she's doing ends now (its effects count for the time actually spent) and she walks to her desk to study until
+ * the session ends. Asleep or too tired: nothing changes. Calling it again with the same session is a no-op.
+ */
+export function joinFocus(state: SimState, until: number, now: number, ctx: SimContext): SimState {
+  let s = advance(state, now, ctx);
+  if (until <= now || s.focusWith?.until === until) return s;
+  s = structuredClone(s);
+  s.focusWith = { until };
+  if (!allowedActivities(s, now, ctx).includes("studying")) return s; // asleep (sleep window) or exhausted
+  const c = s.current;
+  if (c.kind === "studying") { c.end = Math.max(c.end, until); return s; }
+  if (c.kind === "walking") { c.next = "studying"; return s; } // finish this stretch (no teleporting), then walk to the desk
+  c.end = Math.max(c.start + 1, now);
+  return advance(s, now, ctx);
+}
+
+/** The focus session ended or was abandoned: she finishes her current activity naturally and returns to her routine. */
+export function leaveFocus(state: SimState): SimState {
+  if (!state.focusWith) return state;
+  const s = structuredClone(state); s.focusWith = null; return s;
 }
 
 /** Validate a persisted state (from olh-world-v1) before trusting it. */
