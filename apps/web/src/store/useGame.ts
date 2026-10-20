@@ -41,7 +41,7 @@ interface GameState {
 }
 
 const DEFAULT_SETTINGS: Settings = {
-  reducedMotion: "system", renderMode: "3d", characterId: "placeholder", rainVolume: 0, roomVolume: 0, musicVolume: 0.6,
+  reducedMotion: "system", renderMode: "3d", characterId: "girl-one", rainVolume: 0, roomVolume: 0, musicVolume: 0.6,
   chatProvider: "mock", ollamaUrl: "http://localhost:11434", ollamaModel: "llama3.2", notifications: false,
 };
 
