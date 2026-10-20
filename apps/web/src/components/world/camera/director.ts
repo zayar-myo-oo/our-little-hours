@@ -30,6 +30,9 @@ export function stateFromPose(pos: THREE.Vector3, target: THREE.Vector3, fov: nu
   return { target: target.toArray() as Vec3, yaw: Math.atan2(off.x, off.z), pitch: Math.asin(off.y / d), fov, frameH: frameHFor(d, fov) };
 }
 
+/** In-room fixed views on narrower screens: widen the lens so the room still reads (capped at 80°). */
+export const inRoomFov = (fov: number, aspect: number) => (aspect < 0.8 ? Math.min(80, fov * 1.35) : aspect < 1.5 ? Math.min(80, fov * (1 + (1.5 - aspect) * 0.6)) : fov);
+
 /** Portrait screens: keep at least `minWidth` metres visible horizontally at the subject. */
 export const responsiveFrameH = (frameH: number, aspect: number, minWidth = 1.0) => Math.max(frameH, minWidth / Math.max(0.2, aspect));
 

@@ -11,7 +11,7 @@ import { validateLocation, REQUIRED_ANCHORS, type AnchorId, type LocationManifes
 import { PREFAB_IDS, type PrefabId } from "./prefabs/ids";
 import { buildPrefab } from "./prefabs/registry";
 import { isoCameraPose } from "./camera/iso";
-import { CameraDirector, camPosition, closeupState, distanceFor, pullIn, stateFromPose, type CamState, type ShotId } from "./camera/director";
+import { CameraDirector, inRoomFov, camPosition, closeupState, distanceFor, pullIn, stateFromPose, type CamState, type ShotId } from "./camera/director";
 import { findOccluders, makeFadeable, nearerThanSubject, updateFades } from "./occlusion";
 import { mergeStatic } from "./mergeStatic";
 import { overBudget } from "./budget";
@@ -36,6 +36,8 @@ export interface WorldHandle {
   readonly cameraShot: ShotId;
   /** Wide room view: cozy (in-room, illustration framing), cctv (high corner), dollhouse (isometric cut-away). */
   setView(view: ViewId): void;
+  /** She glances at the viewer now (if awake and settled), e.g. when you talk to her. */
+  lookAtViewer(): void;
   readonly view: ViewId;
   readonly anchor: AnchorId;
   readonly hasVrm: boolean;
@@ -209,7 +211,7 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
   const viewState = (id: ViewId, aspect: number): CamState => {
     if (id === "dollhouse") { const iso = isoCameraPose(loc.camera.overview, loc.bounds, aspect); return stateFromPose(iso.position, iso.target, iso.fov); }
     const f = loc.camera.views[id];
-    const fov = aspect < 0.8 ? Math.min(80, f.fov * 1.35) : aspect < 1.1 ? Math.min(80, f.fov * 1.12) : f.fov;
+    const fov = inRoomFov(f.fov, aspect);
     return stateFromPose(new THREE.Vector3(...f.pos), new THREE.Vector3(...f.target), fov);
   };
   const shotsFor = (aspect: number) => {
@@ -287,7 +289,7 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
       if (charRoot.visible) {
         charRoot.getWorldPosition(chest).y += 0.8; head.copy(chest).y += 0.35;
         occluding = findOccluders(camera, [head, chest], foreground);
-        if (cam.currentShot !== "overview") for (const f of nearerThanSubject(camera, chest, foreground)) occluding.add(f);
+        if (cam.currentShot !== "overview" || view !== "dollhouse") for (const f of nearerThanSubject(camera, chest, foreground)) occluding.add(f);
       }
       else occluding = new Set();
     }
@@ -348,6 +350,7 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
       cam.reframe(sh.overview, sh.closeups, now, cam.currentShot === "overview");
     },
     get view() { return view; },
+    lookAtViewer() { glance.glanceNow(performance.now() / 1000); },
     get anchor() { return placedAt ?? anchorId; },
     destroy() {
       disposed = true; stopWatching(); cancelAnimationFrame(raf); ro.disconnect();
