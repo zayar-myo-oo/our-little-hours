@@ -1,1 +1,13 @@
-{ "tracks": [] }
+{
+  "tracks": [
+    { "title": "A Cup of Tea", "artist": "tad", "file": "a-cup-of-tea.mp3", "license": "CC0" },
+    { "title": "Morning Rain", "artist": "tad", "file": "morning-rain.mp3", "license": "CC0" },
+    { "title": "Cat Café", "artist": "tad", "file": "cat-cafe.mp3", "license": "CC0" },
+    { "title": "Chill Lofi", "artist": "omfgdude", "file": "chill-lofi.mp3", "license": "CC0" },
+    { "title": "Rainy Forest", "artist": "tad", "file": "rainy-forest.mp3", "license": "CC0" },
+    { "title": "Since 2 A.M.", "artist": "tad", "file": "since-2-am.mp3", "license": "CC0" },
+    { "title": "Florist", "artist": "tad", "file": "florist.mp3", "license": "CC0" },
+    { "title": "Countryside", "artist": "tad", "file": "countryside.mp3", "license": "CC0" },
+    { "title": "November Snow", "artist": "cynicmusic", "file": "november-snow.mp3", "license": "CC0" }
+  ]
+}

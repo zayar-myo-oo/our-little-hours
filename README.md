@@ -41,7 +41,7 @@ docs/        Build steps and architecture notes
 | Pomodoro: start / pause / reset, focus, short and long breaks, custom durations | Works. Timestamp-based, so it survives reloads; optional browser notifications |
 | To-do list: add, toggle, edit (double-click), delete, clear completed | Works |
 | Rain and room ambience with separate volume sliders | Works. **Synthesized with Web Audio**, so no files are needed |
-| Lo-fi music player | Works **only once you add audio files** (none are shipped; see below) |
+| Lo-fi music player | Ships with 9 CC0 lofi tracks from OpenGameArt (see `apps/web/public/audio/music/CREDITS.md`). Add your own the same way |
 | Chat | Scripted offline replies by default. Optional local [Ollama](https://ollama.com) support with fallback |
 | Story "The Unfinished Page" | Works. Branching choices and flags, progress saved |
 | Local saves (tasks, timer, preferences, chat, story) | IndexedDB, falling back to localStorage, then memory |
@@ -49,7 +49,7 @@ docs/        Build steps and architecture notes
 | Responsive layout for desktop and mobile | Works. The scene crops around the character; panels and nav respect safe areas |
 
 ## Adding music
-Use only audio you have rights to (your own, or CC0). Put files in `apps/web/public/audio/music/` and list them:
+The bundled tracks are CC0. To add more, use only audio you have rights to (your own, or CC0). Put files in `apps/web/public/audio/music/` and list them:
 ```json
 { "tracks": [ { "title": "Rainy Desk", "artist": "You", "file": "rainy-desk.mp3", "license": "CC0" } ] }
 ```
@@ -82,6 +82,5 @@ Backend tests: `cd apps/api && ./gradlew test` (JDK 21; uses in-memory H2, so no
 
 ## Still needed (real assets)
 - A real anime character: a VRM model (VRoid Studio is free) or a licensed Live2D model. The current one is a simple placeholder made of shapes
-- Licensed lo-fi music tracks
 - Optional recorded ambience to replace the synthesized rain
 - Backend verification on a machine with JDK 21 or Docker, plus client-side cloud-save sync
