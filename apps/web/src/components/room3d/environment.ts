@@ -11,7 +11,7 @@ export interface Environment {
 }
 
 // ---------------------------------------------------------------- painting --
-function paintSky(g: CanvasRenderingContext2D, W: number, H: number, p: Palette) {
+export function paintSky(g: CanvasRenderingContext2D, W: number, H: number, p: Palette) {
   const lg = g.createLinearGradient(0, 0, 0, H);
   lg.addColorStop(0, p.skyTop); lg.addColorStop(0.78, p.skyBottom); lg.addColorStop(1, p.skyBottom);
   g.fillStyle = lg; g.fillRect(0, 0, W, H);
@@ -29,7 +29,7 @@ function paintSky(g: CanvasRenderingContext2D, W: number, H: number, p: Palette)
   }
 }
 
-function paintClouds(g: CanvasRenderingContext2D, W: number, H: number, p: Palette) {
+export function paintClouds(g: CanvasRenderingContext2D, W: number, H: number, p: Palette) {
   const r = rng(11);
   const puff = (cx: number, cy: number, s: number) => {
     const blobs = Array.from({ length: 7 }, (_, i) => ({ x: (i - 3) * 22 * s + (r() - 0.5) * 14 * s, y: -Math.sin((i / 6) * Math.PI) * 26 * s + (r() - 0.5) * 8 * s, rad: (20 + r() * 18) * s }));
@@ -44,7 +44,7 @@ function paintClouds(g: CanvasRenderingContext2D, W: number, H: number, p: Palet
   for (let i = 0; i < 9; i++) puff(r() * W, 70 + r() * (H - 130), 0.6 + r() * 0.8);
 }
 
-function paintCity(g: CanvasRenderingContext2D, W: number, H: number, p: Palette) {
+export function paintCity(g: CanvasRenderingContext2D, W: number, H: number, p: Palette) {
   const r = rng(23);
   for (const [layer, alpha] of [[0, 0.55], [1, 1]] as const) {
     let x = 0;
@@ -59,7 +59,7 @@ function paintCity(g: CanvasRenderingContext2D, W: number, H: number, p: Palette
   g.globalAlpha = 1;
 }
 
-function paintFloor(g: CanvasRenderingContext2D, W: number, H: number) {
+export function paintFloor(g: CanvasRenderingContext2D, W: number, H: number) {
   const r = rng(5), cols = ["#c99a72", "#c3926a", "#cfa37c", "#be8d66"];
   const plank = H / 8;
   for (let i = 0; i < 8; i++) {

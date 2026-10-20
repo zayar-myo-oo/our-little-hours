@@ -49,3 +49,21 @@ describe("vrm apply helpers", () => {
     expect(b.color.r).toBeCloseTo(new THREE.Color(0x808080).r * 0.5);
   });
 });
+
+describe("placement helpers", () => {
+  it("placeSeated without a hand target puts the hips on the seat, no lift", async () => {
+    const { placeSeated } = await import("./vrmApply");
+    const { root, humanoid, bones } = rig(0.9, 1.0);
+    root.position.set(5, 5, 5);
+    expect(placeSeated(root, humanoid, 0.45)).toBe(0);
+    root.updateMatrixWorld(true);
+    expect(bones.hips.getWorldPosition(new THREE.Vector3()).toArray().map((n) => +n.toFixed(3))).toEqual([0, 0.45, 0]);
+  });
+  it("placeSeated with a hand target raises the seat for short models", async () => {
+    const { placeSeated } = await import("./vrmApply");
+    const { root, humanoid, bones } = rig(0.9, 1.04);
+    expect(placeSeated(root, humanoid, 0.56, 0.8)).toBeCloseTo(0.1);
+    root.updateMatrixWorld(true);
+    expect(bones.leftHand.getWorldPosition(new THREE.Vector3()).y).toBeCloseTo(0.8);
+  });
+});

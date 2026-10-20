@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import { seatLift, SEAT_TOP_Y, type BoneRotation } from "./vrmPose";
 
-export interface HumanoidLike { getNormalizedBoneNode(name: string): THREE.Object3D | null; update?(): void }
+export interface HumanoidLike { getNormalizedBoneNode(name: string): THREE.Object3D | null; update?(): void; resetNormalizedPose?(): void }
 
 /** Apply bone rotations (from vrmPose) to the normalized humanoid, then sync the raw bones. */
 export function applyPose(humanoid: HumanoidLike, pose: readonly BoneRotation[]) {
@@ -20,6 +20,23 @@ export function placeOnSeat(root: THREE.Object3D, humanoid: HumanoidLike, z: num
   root.position.set(0, SEAT_TOP_Y + lift - hipY, z);
   return lift;
 }
+
+/**
+ * Seat a posed model on a seat of height `seatTop` (root at x = z = 0; the caller moves a parent to the anchor).
+ * With `handTargetY` the seat is raised so the hands reach that height (desk typing); never lowered.
+ */
+export function placeSeated(root: THREE.Object3D, humanoid: HumanoidLike, seatTop: number, handTargetY?: number): number {
+  root.position.set(0, 0, 0);
+  root.updateMatrixWorld(true);
+  const hipY = humanoid.getNormalizedBoneNode("hips")?.getWorldPosition(new THREE.Vector3()).y ?? 0.9;
+  const handY = humanoid.getNormalizedBoneNode("leftHand")?.getWorldPosition(new THREE.Vector3()).y ?? hipY;
+  const lift = handTargetY === undefined ? 0 : seatLift(hipY, handY, seatTop, handTargetY);
+  root.position.y = seatTop + lift - hipY;
+  return lift;
+}
+
+/** Stand on the floor (VRM origin is at the feet). */
+export function placeStanding(root: THREE.Object3D) { root.position.set(0, 0, 0); }
 
 type Tintable = THREE.Material & { color?: THREE.Color; shadeColorFactor?: THREE.Color };
 

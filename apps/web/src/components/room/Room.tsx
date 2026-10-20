@@ -1,17 +1,23 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { Availability } from "@/systems/character/schedule";
+import { isFeatureEnabled } from "@/lib/featureFlags";
 
 interface Handle { setState(s: Availability): void; setReducedMotion(r: boolean): void; setRain?(on: boolean): void; destroy(): void }
 type Mode = "3d" | "2d";
+type Active = "world" | Mode | "css";
 
-/** 3D (three.js) room by default; falls back to the 2D PixiJS room, then to a CSS scene. */
+/** Living World (feature flag, default off) replaces the 3D room; any failure falls back down the chain. */
+const initialFor = (mode: Mode): Active => (mode === "3d" && isFeatureEnabled("livingWorld") ? "world" : mode);
+const FALLBACK: Record<Exclude<Active, "css">, Active> = { world: "3d", "3d": "2d", "2d": "css" };
+
+/** Living World (flagged) → 3D (three.js) room → 2D PixiJS room → CSS scene. */
 export function Room({ state, reducedMotion, rain, mode, modelUrl, onModelError }: { state: Availability; reducedMotion: boolean; rain: boolean; mode: Mode; modelUrl: string | null; onModelError?: () => void }) {
   const host = useRef<HTMLDivElement>(null);
   const scene = useRef<Handle | null>(null);
-  const [active, setActive] = useState<Mode | "css">(mode);
+  const [active, setActive] = useState<Active>(() => initialFor(mode));
 
-  useEffect(() => { setActive(mode); }, [mode]);
+  useEffect(() => { setActive(initialFor(mode)); }, [mode]);
 
   useEffect(() => {
     if (active === "css") return;
@@ -20,13 +26,19 @@ export function Room({ state, reducedMotion, rain, mode, modelUrl, onModelError 
       try {
         const webgl = (await import("./scene")).webglAvailable();
         if (!webgl) throw new Error("no webgl");
-        const h: Handle = active === "3d"
+        const h: Handle = active === "world"
+          ? await (await import("../world/WorldRenderer")).createWorldScene(host.current!, { reducedMotion, state, rain, modelUrl })
+          : active === "3d"
           ? await (await import("../room3d/scene3d")).createScene3D(host.current!, { reducedMotion, state, rain, modelUrl })
           : await (await import("./scene")).createScene(host.current!, { reducedMotion, state, night: new Date().getHours() >= 18 || new Date().getHours() < 6 });
-        if (cancelled) h.destroy(); else { scene.current = h; if (modelUrl && active === "3d" && !(h as { hasVrm?: boolean }).hasVrm) onModelError?.(); }
+        if (cancelled) { h.destroy(); return; }
+        scene.current = h;
+        const ready = (h as { modelReady?: Promise<boolean> }).modelReady; // the world renderer loads the model in the background
+        const loaded = ready ? await ready : !!(h as { hasVrm?: boolean }).hasVrm;
+        if (!cancelled && modelUrl && active !== "2d" && !loaded) onModelError?.();
       } catch (e) {
         console.warn(`${active} room unavailable`, e);
-        if (!cancelled) setActive(active === "3d" ? "2d" : "css");
+        if (!cancelled) setActive(FALLBACK[active as Exclude<Active, "css">]);
       }
     })();
     return () => { cancelled = true; scene.current?.destroy(); scene.current = null; };

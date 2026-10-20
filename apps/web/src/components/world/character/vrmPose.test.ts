@@ -29,3 +29,20 @@ describe("vrm pose math", () => {
     expect(mtoonDimFactor(100, 100)).toBe(0.45);
   });
 });
+
+describe("anchor poses", () => {
+  it("every pose mirrors X/Z for VRM 0.x", async () => {
+    const { poseFor } = await import("./vrmPose");
+    for (const p of ["sit_type", "sit_relax", "stand"] as const) {
+      const a = poseFor(p, "1"), b = poseFor(p, "0");
+      expect(a.length).toBeGreaterThan(0);
+      a.forEach(([bone, x, y, z], i) => expect(b[i]).toEqual([bone, -x, y, -z]));
+    }
+  });
+  it("standing keeps legs in rest pose and lowers both arms symmetrically", async () => {
+    const { standingIdlePose } = await import("./vrmPose");
+    const pose = Object.fromEntries(standingIdlePose("1").map(([b, ...r]) => [b, r]));
+    expect(pose.leftUpperLeg).toBeUndefined();
+    expect(pose.leftUpperArm[2]).toBeCloseTo(-pose.rightUpperArm[2]);
+  });
+});
