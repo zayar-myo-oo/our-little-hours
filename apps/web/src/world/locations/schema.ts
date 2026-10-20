@@ -8,7 +8,8 @@ export const REQUIRED_ANCHORS: readonly AnchorId[] = ["desk", "reading", "window
 const POSES: readonly AnchorPose[] = ["sit_type", "sit_relax", "stand"];
 const LAYERS: readonly Layer[] = ["backdrop", "shell", "props", "foreground"];
 
-export interface Anchor { pos: Vec3; faceY: number; pose: AnchorPose; seatTop?: number; label: string }
+/** approach: the last metres into the anchor are a sit-down step, not walking (e.g. an armchair's depth). Default 0.35. */
+export interface Anchor { pos: Vec3; faceY: number; pose: AnchorPose; seatTop?: number; approach?: number; label: string }
 export interface PropPlacement { prefab: string; pos: Vec3; rotY?: number; layer: Layer }
 export interface IsoShot { kind: "iso"; target: Vec3; yaw: number; pitch: number; fov: number; margin: number }
 /** Cinematic close-up on an anchor. frameH = visible height (m) at the target; hold = seconds before auto returns to overview. */
@@ -21,6 +22,8 @@ export interface LocationManifest {
   anchors: Record<AnchorId, Anchor>;
   props: PropPlacement[];
   camera: { overview: IsoShot; closeups: Record<AnchorId, CloseupShot> };
+  /** Walkable graph: extra nodes plus edges between nodes and anchors (anchors are nodes too). */
+  waypoints: { nodes: Record<string, Vec3>; edges: [string, string][] };
   assets: AssetEntry[];
   budgets: { maxDrawCalls: number; maxTriangles: number; maxTextureMB: number };
 }
@@ -47,6 +50,7 @@ export function validateLocation(m: unknown, knownPrefabs: readonly string[]): s
     else if (boundsOk && !inside(a.pos, b!)) errs.push(`anchors.${id}: outside bounds`);
     if (!isNum(a.faceY)) errs.push(`anchors.${id}.faceY: invalid`);
     if (!POSES.includes(a.pose)) errs.push(`anchors.${id}.pose: unknown "${a.pose}"`);
+    if (a.approach !== undefined && !(isNum(a.approach) && a.approach >= 0 && a.approach <= 1)) errs.push(`anchors.${id}.approach: 0–1 m`);
     if (a.pose !== "stand" && !(isNum(a.seatTop) && a.seatTop > 0.2 && a.seatTop < 1)) errs.push(`anchors.${id}.seatTop: required for seated poses`);
   }
   if (boundsOk && o.anchors) {
@@ -80,6 +84,24 @@ export function validateLocation(m: unknown, knownPrefabs: readonly string[]): s
     if (c.fov < 20 || c.fov > 50) errs.push(`camera.closeups.${id}.fov: keep between 20° and 50°`);
     if (c.pitch < 0 || c.pitch > 0.9) errs.push(`camera.closeups.${id}.pitch: keep between 0 and ~50°`);
     if (c.frameH < 0.5 || c.frameH > 4) errs.push(`camera.closeups.${id}.frameH: 0.5–4 m`);
+  }
+
+  const wp = o.waypoints;
+  if (!wp || typeof wp.nodes !== "object" || !Array.isArray(wp.edges)) errs.push("waypoints: required");
+  else {
+    const ids = new Set([...Object.keys(wp.nodes), ...REQUIRED_ANCHORS]);
+    for (const [id, p] of Object.entries(wp.nodes)) {
+      if ((REQUIRED_ANCHORS as readonly string[]).includes(id)) errs.push(`waypoints.nodes.${id}: clashes with an anchor id`);
+      if (!isVec3(p)) errs.push(`waypoints.nodes.${id}: invalid`); else if (boundsOk && !inside(p, b!)) errs.push(`waypoints.nodes.${id}: outside bounds`);
+    }
+    const adj = new Map<string, string[]>([...ids].map((k) => [k, []]));
+    for (const e of wp.edges) {
+      if (!Array.isArray(e) || e.length !== 2 || !ids.has(e[0]) || !ids.has(e[1])) { errs.push(`waypoints.edges: unknown node in ${JSON.stringify(e)}`); continue; }
+      adj.get(e[0])!.push(e[1]); adj.get(e[1])!.push(e[0]);
+    }
+    const seen = new Set<string>(["desk"]), queue = ["desk"];
+    while (queue.length) for (const n of adj.get(queue.shift()!) ?? []) if (!seen.has(n)) { seen.add(n); queue.push(n); }
+    for (const a of REQUIRED_ANCHORS) if (!seen.has(a)) errs.push(`waypoints: anchor "${a}" is not reachable`);
   }
 
   if (!Array.isArray(o.assets)) errs.push("assets: required (asset manifest)");

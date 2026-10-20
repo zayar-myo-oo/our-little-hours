@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "walkSpeed": 0.9,
+  "passivePerHour": { "energy": -4, "mood": -2, "creativity": -2, "focus": -2, "social": -1 },
+  "activities": {
+    "studying": { "anchor": "desk",    "minutes": [25, 55], "perHour": { "focus": -22, "energy": -9, "creativity": -4, "mood": 4 },  "requires": { "energy": 18 }, "pose": "sit_type",  "label": "Studying at the desk" },
+    "reading":  { "anchor": "reading", "minutes": [20, 45], "perHour": { "creativity": 22, "mood": 8, "focus": 6, "energy": -2 },   "pose": "sit_relax", "label": "Reading in the armchair" },
+    "relaxing": { "anchor": "reading", "minutes": [15, 35], "perHour": { "energy": 14, "mood": 10, "focus": 10 },                   "pose": "sit_relax", "label": "Relaxing" },
+    "tea":      { "anchor": "tea",     "minutes": [8, 15],  "perHour": { "energy": 30, "mood": 20, "focus": 20, "social": 4 },      "pose": "stand",     "label": "Making tea" },
+    "window":   { "anchor": "window",  "minutes": [6, 18],  "perHour": { "creativity": 35, "mood": 18, "focus": 10, "social": 2 }, "pose": "stand",     "label": "Looking out the window" },
+    "sleeping": { "anchor": "reading", "minutes": [60, 600], "perHour": { "energy": 13, "focus": 8, "mood": 2 },                    "pose": "sit_relax", "label": "Sleeping" }
+  },
+  "sleepWindow": { "weekday": ["23:00", "07:30"], "weekend": ["00:30", "09:00"] },
+  "routine": {
+    "weekday": [
+      { "from": "07:30", "to": "09:00", "bias": { "tea": 30, "window": 10 } },
+      { "from": "09:00", "to": "12:00", "bias": { "studying": 35 } },
+      { "from": "12:00", "to": "13:30", "bias": { "tea": 20, "relaxing": 15 } },
+      { "from": "13:30", "to": "17:30", "bias": { "studying": 25, "reading": 10 } },
+      { "from": "17:30", "to": "23:00", "bias": { "reading": 20, "relaxing": 15, "window": 10 } }
+    ],
+    "weekend": [
+      { "from": "09:00", "to": "12:00", "bias": { "tea": 20, "window": 20, "reading": 15 } },
+      { "from": "12:00", "to": "18:00", "bias": { "reading": 25, "studying": 8, "window": 10 } },
+      { "from": "18:00", "to": "00:30", "bias": { "relaxing": 25, "reading": 15 } }
+    ]
+  },
+  "personality": { "id": "mio", "weights": { "studying": 1.0, "reading": 1.15, "relaxing": 0.9, "tea": 1.0, "window": 1.1 } }
+}

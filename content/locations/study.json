@@ -35,8 +35,9 @@
       ],
       "faceY": -0.785,
       "pose": "sit_relax",
-      "seatTop": 0.45,
-      "label": "Reading corner"
+      "seatTop": 0.53,
+      "label": "Reading corner",
+      "approach": 0.6
     },
     "window": {
       "pos": [
@@ -311,5 +312,63 @@
     "maxDrawCalls": 220,
     "maxTriangles": 150000,
     "maxTextureMB": 8
+  },
+  "waypoints": {
+    "nodes": {
+      "center": [
+        0.2,
+        0,
+        0.2
+      ],
+      "desk_side": [
+        -0.4,
+        0,
+        -1.95
+      ],
+      "reading_front": [
+        1.35,
+        0,
+        -0.95
+      ],
+      "tea_front": [
+        -1.3,
+        0,
+        1.1
+      ]
+    },
+    "edges": [
+      [
+        "desk",
+        "desk_side"
+      ],
+      [
+        "desk_side",
+        "window"
+      ],
+      [
+        "window",
+        "center"
+      ],
+      [
+        "desk_side",
+        "center"
+      ],
+      [
+        "center",
+        "reading_front"
+      ],
+      [
+        "reading_front",
+        "reading"
+      ],
+      [
+        "center",
+        "tea_front"
+      ],
+      [
+        "tea_front",
+        "tea"
+      ]
+    ]
   }
 }

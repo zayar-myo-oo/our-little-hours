@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Availability } from "@/systems/character/schedule";
 import { isFeatureEnabled } from "@/lib/featureFlags";
+import type { SimSnapshot } from "@/world/sim/engine";
 
 interface Handle { setState(s: Availability): void; setReducedMotion(r: boolean): void; setRain?(on: boolean): void; destroy(): void }
 type Mode = "3d" | "2d";
@@ -12,9 +13,11 @@ const initialFor = (mode: Mode): Active => (mode === "3d" && isFeatureEnabled("l
 const FALLBACK: Record<Exclude<Active, "css">, Active> = { world: "3d", "3d": "2d", "2d": "css" };
 
 /** Living World (flagged) → 3D (three.js) room → 2D PixiJS room → CSS scene. */
-export function Room({ state, reducedMotion, rain, mode, modelUrl, onModelError }: { state: Availability; reducedMotion: boolean; rain: boolean; mode: Mode; modelUrl: string | null; onModelError?: () => void }) {
+export function Room({ state, reducedMotion, rain, mode, modelUrl, onModelError, sim = null, simNow }: { state: Availability; reducedMotion: boolean; rain: boolean; mode: Mode; modelUrl: string | null; onModelError?: () => void; sim?: SimSnapshot | null; simNow?: () => number }) {
   const host = useRef<HTMLDivElement>(null);
   const scene = useRef<Handle | null>(null);
+  const simRef = useRef(sim); simRef.current = sim;
+  const nowRef = useRef(simNow); nowRef.current = simNow;
   const [active, setActive] = useState<Active>(() => initialFor(mode));
   const [modelLoading, setModelLoading] = useState(false);
   const [cameraShot, setCameraShot] = useState("overview");
@@ -36,6 +39,8 @@ export function Room({ state, reducedMotion, rain, mode, modelUrl, onModelError 
           : await (await import("./scene")).createScene(host.current!, { reducedMotion, state, night: new Date().getHours() >= 18 || new Date().getHours() < 6 });
         if (cancelled) { h.destroy(); return; }
         scene.current = h;
+        if (process.env.NODE_ENV === "development") (window as unknown as { __olhRoom?: unknown }).__olhRoom = h; // dev-only debugging handle
+        (h as { applySim?(s: SimSnapshot | null, n?: () => number): void }).applySim?.(simRef.current, nowRef.current);
         const ready = (h as { modelReady?: Promise<boolean> }).modelReady; // the world renderer loads the model in the background
         if (ready && modelUrl) setModelLoading(true);
         const loaded = ready ? await ready : !!(h as { hasVrm?: boolean }).hasVrm;
@@ -53,6 +58,7 @@ export function Room({ state, reducedMotion, rain, mode, modelUrl, onModelError 
   useEffect(() => { scene.current?.setState(state); }, [state]);
   useEffect(() => { scene.current?.setReducedMotion(reducedMotion); }, [reducedMotion]);
   useEffect(() => { scene.current?.setRain?.(rain); }, [rain]);
+  useEffect(() => { (scene.current as { applySim?(s: SimSnapshot | null, n?: () => number): void } | null)?.applySim?.(sim, nowRef.current); }, [sim]);
 
   if (active === "css") {
     return (

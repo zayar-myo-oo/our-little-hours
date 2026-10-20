@@ -12,6 +12,8 @@ import { StoryPanel } from "@/components/panels/StoryPanel";
 import { SettingsPanel } from "@/components/panels/SettingsPanel";
 import { getAmbient } from "@/systems/audio/ambient";
 import { loadModels, resolveModelUrl, type CharacterModel } from "@/systems/character/models";
+import { isFeatureEnabled } from "@/lib/featureFlags";
+import { useLivingWorld } from "@/world/runtime/useLivingWorld";
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "focus", label: "Focus", icon: "⏳" }, { id: "tasks", label: "Tasks", icon: "✎" }, { id: "music", label: "Music", icon: "♪" },
@@ -28,6 +30,9 @@ export default function Home() {
   const music = useMusic();
   const [models, setModels] = useState<CharacterModel[] | null>(null);
   const [modelError, setModelError] = useState<string | null>(null);
+  const [livingWorld, setLivingWorld] = useState(false);
+  useEffect(() => { setLivingWorld(isFeatureEnabled("livingWorld")); }, []);
+  const world = useLivingWorld(livingWorld && g.settings.renderMode === "3d");
 
   useEffect(() => {
     const unsub = useGame.persist.onFinishHydration(() => setHydrated(true));
@@ -61,7 +66,10 @@ export default function Home() {
   }, [hydrated]);
 
   const date = new Date(now);
-  const block = currentBlock(date), next = nextChange(date);
+  const schedBlock = currentBlock(date), schedNext = nextChange(date);
+  // With the Living World on, what she's doing comes from the simulation instead of the fixed schedule.
+  const block = world.snap ? { state: world.snap.availability, activity: world.snap.label } : schedBlock;
+  const untilLabel = world.snap ? new Date(world.snap.end).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : fmtMinutes(schedNext.start);
   const reduced = g.settings.reducedMotion === "on" || (g.settings.reducedMotion === "system" && systemReduced);
   const charName = models?.find((m) => m.id === g.settings.characterId && m.available)?.name ?? "Yuzu";
   const tasksOpen = g.tasks.filter((t) => !t.done).length, hour = date.getHours();
@@ -72,7 +80,7 @@ export default function Home() {
   return (
     <main className={`relative h-[100dvh] w-full select-none overflow-hidden ${reduced ? "motion-reduce-all" : ""}`}>
       {hydrated && models !== null && (
-        <Room state={block.state} reducedMotion={reduced} rain={g.settings.rainVolume > 0} mode={g.settings.renderMode}
+        <Room state={block.state} reducedMotion={reduced} rain={g.settings.rainVolume > 0} mode={g.settings.renderMode} sim={world.snap} simNow={world.now}
           modelUrl={resolveModelUrl(models, g.settings.characterId)}
           onModelError={() => setModelError("That character couldn't be loaded, so the placeholder is shown. Check that the .vrm file is valid.")} />
       )}
@@ -84,7 +92,7 @@ export default function Home() {
           <p className="text-sm font-medium opacity-95">{date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" })}</p>
           <p className="text-4xl font-semibold leading-tight tracking-tight tabular-nums sm:text-5xl">{date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</p>
           <p className="mt-0.5 text-xs opacity-90">♫ {music.playing && music.tracks?.[music.index] ? music.tracks[music.index].title : "Our Little Room"}</p>
-          <p className="mt-1 flex items-center gap-1.5 text-[11px] opacity-90"><span className={`h-2 w-2 rounded-full ${dot}`} />{charName} · {block.activity} · until {fmtMinutes(next.start)}</p>
+          <p className="mt-1 flex items-center gap-1.5 text-[11px] opacity-90"><span className={`h-2 w-2 rounded-full ${dot}`} />{charName} · {block.activity} · until {untilLabel}</p>
         </div>
         <button onClick={() => g.setTab("focus")} className="pointer-events-auto rounded-2xl border border-white/30 bg-black/25 px-4 py-2 text-center backdrop-blur-md">
           <p className="text-xl font-semibold tabular-nums">{formatMs(remaining(g.timer, now))}</p>

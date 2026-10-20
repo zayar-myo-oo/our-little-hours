@@ -17,7 +17,9 @@ import { mergeStatic } from "./mergeStatic";
 import { overBudget } from "./budget";
 import { detectTier, qualityFor, readDeviceInfo, parseQualityOverride, FrameLimiter, type Quality } from "./quality";
 import { applyPose, placeSeated, placeStanding, dimMaterials, type HumanoidLike } from "./character/vrmApply";
-import { poseFor, mtoonDimFactor, KEYBOARD_HAND_Y } from "./character/vrmPose";
+import { poseFor, mtoonDimFactor, standingIdlePose, KEYBOARD_HAND_Y } from "./character/vrmPose";
+import { pointAlong, pathLength } from "@/world/sim/nav";
+import type { SimSnapshot } from "@/world/sim/engine";
 
 export interface WorldHandle {
   setState(s: Availability): void;
@@ -25,6 +27,8 @@ export interface WorldHandle {
   setRain(on: boolean): void;
   destroy(): void;
   placeAt(anchor: AnchorId): void;
+  /** Drive the character from the life simulation (null = fall back to schedule-based placement). */
+  applySim(snap: SimSnapshot | null, now?: () => number): void;
   /** Manual camera control: "overview" or an anchor close-up. Manual choices pause automatic switching for a while. */
   focusCamera(shot: ShotId): void;
   setAutoCamera(on: boolean): void;
@@ -53,7 +57,7 @@ type VRMLike = {
 const urlParam = (k: string) => (typeof location !== "undefined" ? new URLSearchParams(location.search).get(k) : null);
 
 export async function createWorldScene(host: HTMLElement, opts: WorldOptions): Promise<WorldHandle> {
-  const loc = opts.location ?? (studyJson as LocationManifest);
+  const loc = opts.location ?? (studyJson as unknown as LocationManifest);
   const problems = validateLocation(loc, PREFAB_IDS);
   if (problems.length) throw new Error(`invalid location "${loc.id}": ${problems.join("; ")}`);
 
@@ -146,11 +150,32 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
     } else placeholder?.setPose(a.pose, a.seatTop ?? 0.5);
   }
   let placedAt: AnchorId | null = null;
+  let sim: SimSnapshot | null = null, walkLen = 1, simNow: () => number = () => Date.now();
+  function startWalking() {
+    walkLen = Math.max(0.1, pathLength(sim!.walk!.path));
+    if (vrm) { vrm.humanoid.resetNormalizedPose?.(); applyPose(vrm.humanoid, standingIdlePose(vrm.meta?.metaVersion)); placeStanding(vrm.scene); }
+    else placeholder?.setPose("stand", 0);
+  }
+  /** Procedural walk (no animation clips needed): alternating thighs/knees, counter-swinging arms, slight bob. */
+  function walkFrame(nowMs: number) {
+    const w = sim!.walk!, f = (nowMs - sim!.start) / Math.max(1, sim!.end - sim!.start);
+    const { pos, yaw } = pointAlong(w.path, f);
+    charRoot.position.set(...pos); charRoot.rotation.y = yaw;
+    const phase = Math.min(1, Math.max(0, f)) * walkLen * (2 * Math.PI / 1.1), sw = reduced ? 0 : Math.sin(phase);
+    if (vrm) {
+      const k = vrm.meta?.metaVersion === "0" ? -1 : 1, b = (n: string) => vrm!.humanoid.getNormalizedBoneNode(n);
+      b("leftUpperLeg")?.rotation.set(-k * sw * 0.4, 0, 0); b("rightUpperLeg")?.rotation.set(k * sw * 0.4, 0, 0);
+      b("leftLowerLeg")?.rotation.set(k * (0.1 + Math.max(0, sw) * 0.6), 0, 0); b("rightLowerLeg")?.rotation.set(k * (0.1 + Math.max(0, -sw) * 0.6), 0, 0);
+      b("leftUpperArm")?.rotation.set(k * sw * 0.28, 0, -k * 1.2); b("rightUpperArm")?.rotation.set(-k * sw * 0.28, 0, k * 1.2);
+      vrm.scene.position.y = Math.abs(sw) * 0.015;
+    }
+  }
   const directorRef: { current?: CameraDirector } = {}; // set below once the camera shots are known
   function applyState() {
     // M1-A has no simulation yet: map today's schedule onto placement (M1-C replaces this).
     charRoot.visible = state !== "BUSY";
-    const at = state === "SLEEPING" ? "reading" : anchorId;
+    if (sim?.walk) { startWalking(); return; } // position follows the path every frame
+    const at = sim ? sim.anchor : state === "SLEEPING" ? "reading" : anchorId;
     place(at);
     if (at !== placedAt) { const first = placedAt === null; placedAt = at; if (!first && charRoot.visible) directorRef.current?.focus(at, performance.now(), "auto"); }
     rain.visible = raining;
@@ -251,6 +276,7 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
       for (let i = 0; i < RAIN; i++) { let y = rainPos[i * 6 + 1] - 4 * dt; if (y < 1.12) y += 1.25; rainPos[i * 6 + 1] = y; rainPos[i * 6 + 4] = y - 0.1; }
       rainGeo.attributes.position.needsUpdate = true;
     }
+    if (sim?.walk && charRoot.visible) walkFrame(simNow()); // same clock as the simulation
     for (const u of updaters) u(t);
     blinkT -= dt;
     const closed = state === "SLEEPING" || (state === "AVAILABLE" && blinkT < 0);
@@ -283,6 +309,7 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
     setReducedMotion(r) { reduced = r; cam.reducedMotion = r; },
     setRain(on) { raining = on; rain.visible = on; },
     placeAt(id) { if (loc.anchors[id]) { anchorId = id; applyState(); } },
+    applySim(snap, now) { sim = snap; if (now) simNow = now; if (snap) state = snap.availability; applyState(); },
     focusCamera(shot) { cam.focus(shot, performance.now(), "manual"); },
     setAutoCamera(on) { cam.auto = on; },
     get cameraShot() { return cam.currentShot; },
