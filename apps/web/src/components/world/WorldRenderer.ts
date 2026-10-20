@@ -12,6 +12,8 @@ import { PREFAB_IDS, type PrefabId } from "./prefabs/ids";
 import { buildPrefab } from "./prefabs/registry";
 import { isoCameraPose } from "./camera/iso";
 import { findOccluders, makeFadeable, updateFades } from "./occlusion";
+import { mergeStatic } from "./mergeStatic";
+import { overBudget } from "./budget";
 import { detectTier, qualityFor, readDeviceInfo, parseQualityOverride, FrameLimiter, type Quality } from "./quality";
 import { applyPose, placeSeated, placeStanding, dimMaterials, type HumanoidLike } from "./character/vrmApply";
 import { poseFor, mtoonDimFactor, KEYBOARD_HAND_Y } from "./character/vrmPose";
@@ -26,6 +28,8 @@ export interface WorldHandle {
   /** Resolves when the selected VRM has loaded (true) or failed (false). */
   readonly modelReady: Promise<boolean>;
   readonly quality: Quality;
+  /** GPU cost of the last rendered frame (from renderer.info). */
+  stats(): { drawCalls: number; triangles: number };
 }
 
 export interface WorldOptions {
@@ -83,6 +87,9 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
     if (p.layer === "foreground") { makeFadeable(res.object); foreground.push(res.object); }
   }
 
+  // Static furniture and walls never move: one mesh per material keeps draw calls low (389 → ~50 for the study).
+  mergeStatic(layers.shell); mergeStatic(layers.props);
+
   // rain outside the window (only visible through the opening)
   const RAIN = quality.tier === "low" ? 60 : 140, rainPos = new Float32Array(RAIN * 6), rr = rng(4);
   // only between the glass and the painted view, inside the opening (x ∈ [-2.4, 0.4], y ∈ [1, 2.4]), so the walls hide it elsewhere
@@ -111,6 +118,7 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
       if (loaded.lookAt) loaded.lookAt.target = camera;
       vrm = loaded;
       applyState();
+      performance.mark("olh:world-model-ready");
       return true;
     } catch (e) { console.warn("[world] VRM not loaded", e); return false; }
   })();
@@ -164,7 +172,7 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
 
   const clock = new THREE.Clock(), limiter = new FrameLimiter(quality.maxFps);
   const head = new THREE.Vector3(), chest = new THREE.Vector3();
-  let raf = 0, t = 0, frame = 0, blinkT = 2, occluding = new Set<THREE.Object3D>();
+  let budgetChecked = false, raf = 0, t = 0, frame = 0, blinkT = 2, occluding = new Set<THREE.Object3D>();
   const loop = (now: number) => {
     raf = requestAnimationFrame(loop);
     if (!limiter.shouldRender(now)) return;
@@ -191,6 +199,12 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
       vrm.update(dt);
     } else placeholder?.animate(t, closed, reduced);
     if (composer) composer.render(dt); else renderer.render(scene, camera);
+    if (frame === 1) performance.mark("olh:world-first-frame"); // load-time measurement (see docs)
+    if (!budgetChecked && !composer) {
+      budgetChecked = true;
+      const over = overBudget({ drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles }, loc.budgets);
+      if (over.length) console.warn(`[world] "${loc.id}" over budget:`, over.join(", "));
+    }
   };
   raf = requestAnimationFrame(loop);
   const stopWatching = pauseWhenHidden({
@@ -200,6 +214,7 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
 
   return {
     get hasVrm() { return !!vrm; }, modelReady, quality,
+    stats: () => ({ drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles }),
     setState(s) { state = s; applyState(); },
     setReducedMotion(r) { reduced = r; },
     setRain(on) { raining = on; rain.visible = on; },

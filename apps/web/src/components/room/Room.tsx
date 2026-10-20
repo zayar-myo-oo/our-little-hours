@@ -16,6 +16,7 @@ export function Room({ state, reducedMotion, rain, mode, modelUrl, onModelError 
   const host = useRef<HTMLDivElement>(null);
   const scene = useRef<Handle | null>(null);
   const [active, setActive] = useState<Active>(() => initialFor(mode));
+  const [modelLoading, setModelLoading] = useState(false);
 
   useEffect(() => { setActive(initialFor(mode)); }, [mode]);
 
@@ -34,7 +35,9 @@ export function Room({ state, reducedMotion, rain, mode, modelUrl, onModelError 
         if (cancelled) { h.destroy(); return; }
         scene.current = h;
         const ready = (h as { modelReady?: Promise<boolean> }).modelReady; // the world renderer loads the model in the background
+        if (ready && modelUrl) setModelLoading(true);
         const loaded = ready ? await ready : !!(h as { hasVrm?: boolean }).hasVrm;
+        if (!cancelled) setModelLoading(false);
         if (!cancelled && modelUrl && active !== "2d" && !loaded) onModelError?.();
       } catch (e) {
         console.warn(`${active} room unavailable`, e);
@@ -60,5 +63,14 @@ export function Room({ state, reducedMotion, rain, mode, modelUrl, onModelError 
       </div>
     );
   }
-  return <div key={`${active}:${modelUrl}`} ref={host} className="absolute inset-0" aria-hidden />;
+  return (
+    <>
+      <div key={`${active}:${modelUrl}`} ref={host} className="absolute inset-0" aria-hidden />
+      {modelLoading && (
+        <p role="status" className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 rounded-full bg-ink/60 px-3 py-1 text-xs text-cream/90 backdrop-blur">
+          Loading character…
+        </p>
+      )}
+    </>
+  );
 }

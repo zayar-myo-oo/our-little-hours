@@ -48,6 +48,6 @@ Every asset must be listed in the manifest's `assets` with a `license`; validati
 
 ## Known limitations
 - No walking or transitions yet (M1-C); no camera close-ups (M1-B).
-- The draw-call and triangle budgets are declared but not yet measured automatically. The prefabs are small primitive meshes, well under budget by inspection.
+- ~~Budgets not measured~~ **Fixed in M1-B:** measuring showed **389 draw calls (over the 220 budget)**. Static meshes are now merged per material: **50 draw calls, 25,504 triangles**. This is enforced by `budget.test.ts` and checked at runtime.
 - The armchair seat height (0.45) and relaxed pose are tuned for VRoid proportions; other rigs may float or sink slightly.
-- In the dev server the first load compiles the 3D chunk and can take several seconds. Production builds are pre-compiled.
+- ~~Slow first dev load~~ **Fixed in M1-B:** dev now uses Turbopack (first compile 5.7 s → 3.7 s; world first frame 1.36 s → 0.65 s, measured). The room renders before the character finishes loading. Models and audio get a 1-day cache plus background revalidation in production.
