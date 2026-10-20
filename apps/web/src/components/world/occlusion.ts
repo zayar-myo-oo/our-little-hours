@@ -39,3 +39,10 @@ export function updateFades(candidates: THREE.Object3D[], occluding: Set<THREE.O
     });
   }
 }
+
+/** Close-ups: foreground props nearer to the camera than the subject would fill the frame, so they all fade. */
+export function nearerThanSubject(camera: THREE.Camera, subject: THREE.Vector3, candidates: THREE.Object3D[]): Set<THREE.Object3D> {
+  const cam = new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld), dSubject = cam.distanceTo(subject);
+  const box = new THREE.Box3(), p = new THREE.Vector3();
+  return new Set(candidates.filter((c) => box.setFromObject(c).clampPoint(cam, p).distanceTo(cam) < dSubject));
+}

@@ -99,7 +99,8 @@ const builders: Record<PrefabId, Builder> = {
     // diorama walls in the overview. Local origin = opening centre on the floor line; group sits at z = -2.5.
     const r = rng(42);
     const tex = kit.canvasTex(1024, 512, (c, w, h) => {
-      paintSky(c, w, h, pal); paintClouds(c, w, h * 0.7, pal);
+      // the legacy sky's sun glow is sized for a huge backdrop; through a small window it washes everything out
+      paintSky(c, w, h, { ...pal, glow: "rgba(255,250,235,0.25)" }); paintClouds(c, w, h * 0.7, pal);
       c.save(); c.translate(0, h * 0.42); paintCity(c, w, h * 0.45, pal); c.restore();
       c.fillStyle = pal.phase === "night" ? "#2f4a3c" : "#a9cf8f"; c.fillRect(0, h * 0.86, w, h * 0.14);
       const pinks = ["#ffd3e2", "#f9b6cd", "#f5a3c0", "#ffe6ef"];
@@ -114,7 +115,7 @@ const builders: Record<PrefabId, Builder> = {
     });
     const view = new THREE.Mesh(kit.track(new THREE.PlaneGeometry(2.8, 1.4)), kit.track(new THREE.MeshBasicMaterial({ map: tex, fog: false, color: 0xc9c4c8 })));  // seen through glass: slightly dimmer, avoids bloom wash-out
     view.position.set(0, 1.7, -0.25);
-    return { object: view };
+    return { object: group(view) }; // wrap: the renderer sets the returned object's position from the manifest
   },
 
   rug_round: ({ kit }) => {

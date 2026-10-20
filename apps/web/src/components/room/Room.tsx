@@ -17,6 +17,8 @@ export function Room({ state, reducedMotion, rain, mode, modelUrl, onModelError 
   const scene = useRef<Handle | null>(null);
   const [active, setActive] = useState<Active>(() => initialFor(mode));
   const [modelLoading, setModelLoading] = useState(false);
+  const [cameraShot, setCameraShot] = useState("overview");
+  const [autoCamera, setAutoCamera] = useState(true);
 
   useEffect(() => { setActive(initialFor(mode)); }, [mode]);
 
@@ -28,7 +30,7 @@ export function Room({ state, reducedMotion, rain, mode, modelUrl, onModelError 
         const webgl = (await import("./scene")).webglAvailable();
         if (!webgl) throw new Error("no webgl");
         const h: Handle = active === "world"
-          ? await (await import("../world/WorldRenderer")).createWorldScene(host.current!, { reducedMotion, state, rain, modelUrl })
+          ? await (await import("../world/WorldRenderer")).createWorldScene(host.current!, { reducedMotion, state, rain, modelUrl, onCameraShot: setCameraShot })
           : active === "3d"
           ? await (await import("../room3d/scene3d")).createScene3D(host.current!, { reducedMotion, state, rain, modelUrl })
           : await (await import("./scene")).createScene(host.current!, { reducedMotion, state, night: new Date().getHours() >= 18 || new Date().getHours() < 6 });
@@ -66,6 +68,22 @@ export function Room({ state, reducedMotion, rain, mode, modelUrl, onModelError 
   return (
     <>
       <div key={`${active}:${modelUrl}`} ref={host} className="absolute inset-0" aria-hidden />
+      {active === "world" && (
+        <div className="absolute left-3 top-1/2 flex -translate-y-1/2 flex-col gap-1.5 rounded-2xl border border-cream/15 bg-ink/55 p-1.5 text-[11px] text-cream backdrop-blur" role="group" aria-label="Camera">
+          {([["overview", "Room"], ["closeup", "Close-up"]] as const).map(([id, label]) => {
+            const on = id === "overview" ? cameraShot === "overview" : cameraShot !== "overview";
+            return (
+              <button key={id} aria-pressed={on} onClick={() => {
+                const w = scene.current as unknown as { focusCamera(s: string): void; anchor: string } | null;
+                w?.focusCamera(id === "overview" ? "overview" : w.anchor);
+              }} className={`rounded-xl px-2.5 py-1.5 ${on ? "bg-amber-glow/30" : "hover:bg-cream/10"}`}>{label}</button>
+            );
+          })}
+          <button aria-pressed={autoCamera} title="Switch to close-ups automatically when she starts something"
+            onClick={() => { const next = !autoCamera; setAutoCamera(next); (scene.current as unknown as { setAutoCamera(o: boolean): void } | null)?.setAutoCamera(next); }}
+            className={`rounded-xl px-2.5 py-1.5 ${autoCamera ? "bg-cream/15" : "opacity-60 hover:bg-cream/10"}`}>Auto {autoCamera ? "on" : "off"}</button>
+        </div>
+      )}
       {modelLoading && (
         <p role="status" className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 rounded-full bg-ink/60 px-3 py-1 text-xs text-cream/90 backdrop-blur">
           Loading character…

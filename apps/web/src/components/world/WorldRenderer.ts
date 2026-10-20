@@ -7,11 +7,12 @@ import { makeKit, v, rng } from "@/components/room3d/kit";
 import { paletteFor } from "@/components/room3d/timeOfDay";
 import { pauseWhenHidden } from "@/lib/visibility";
 import studyJson from "@content/locations/study.json";
-import { validateLocation, type AnchorId, type LocationManifest } from "@/world/locations/schema";
+import { validateLocation, REQUIRED_ANCHORS, type AnchorId, type LocationManifest } from "@/world/locations/schema";
 import { PREFAB_IDS, type PrefabId } from "./prefabs/ids";
 import { buildPrefab } from "./prefabs/registry";
 import { isoCameraPose } from "./camera/iso";
-import { findOccluders, makeFadeable, updateFades } from "./occlusion";
+import { CameraDirector, camPosition, closeupState, distanceFor, pullIn, stateFromPose, type CamState, type ShotId } from "./camera/director";
+import { findOccluders, makeFadeable, nearerThanSubject, updateFades } from "./occlusion";
 import { mergeStatic } from "./mergeStatic";
 import { overBudget } from "./budget";
 import { detectTier, qualityFor, readDeviceInfo, parseQualityOverride, FrameLimiter, type Quality } from "./quality";
@@ -24,6 +25,11 @@ export interface WorldHandle {
   setRain(on: boolean): void;
   destroy(): void;
   placeAt(anchor: AnchorId): void;
+  /** Manual camera control: "overview" or an anchor close-up. Manual choices pause automatic switching for a while. */
+  focusCamera(shot: ShotId): void;
+  setAutoCamera(on: boolean): void;
+  readonly cameraShot: ShotId;
+  readonly anchor: AnchorId;
   readonly hasVrm: boolean;
   /** Resolves when the selected VRM has loaded (true) or failed (false). */
   readonly modelReady: Promise<boolean>;
@@ -35,6 +41,8 @@ export interface WorldHandle {
 export interface WorldOptions {
   reducedMotion: boolean; state: Availability; rain: boolean; modelUrl: string | null;
   location?: LocationManifest; anchor?: AnchorId;
+  /** Called when the camera shot changes (manual, automatic or returning to the overview). */
+  onCameraShot?: (shot: ShotId) => void;
 }
 
 type VRMLike = {
@@ -137,10 +145,14 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
       else placeSeated(vrm.scene, vrm.humanoid, a.seatTop ?? 0.5, a.pose === "sit_type" ? KEYBOARD_HAND_Y : undefined);
     } else placeholder?.setPose(a.pose, a.seatTop ?? 0.5);
   }
+  let placedAt: AnchorId | null = null;
+  const directorRef: { current?: CameraDirector } = {}; // set below once the camera shots are known
   function applyState() {
     // M1-A has no simulation yet: map today's schedule onto placement (M1-C replaces this).
     charRoot.visible = state !== "BUSY";
-    place(state === "SLEEPING" ? "reading" : anchorId);
+    const at = state === "SLEEPING" ? "reading" : anchorId;
+    place(at);
+    if (at !== placedAt) { const first = placedAt === null; placedAt = at; if (!first && charRoot.visible) directorRef.current?.focus(at, performance.now(), "auto"); }
     rain.visible = raining;
   }
   applyState();
@@ -158,17 +170,64 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
     } catch (e) { console.warn("[world] bloom unavailable", e); }
   }
 
+  // Hybrid camera: iso overview + per-anchor close-ups (see camera/director.ts for the dolly-zoom model)
+  const shotsFor = (aspect: number) => {
+    const iso = isoCameraPose(loc.camera.overview, loc.bounds, aspect);
+    const overview = stateFromPose(iso.position, iso.target, iso.fov);
+    const closeups = Object.fromEntries(REQUIRED_ANCHORS.map((a) => [a, closeupState(loc.anchors[a].pos, loc.camera.closeups[a], aspect)])) as Record<AnchorId, CamState>;
+    return { overview, closeups };
+  };
+  let aspect = (host.clientWidth || 1) / (host.clientHeight || 1);
+  let lastShot: ShotId = "overview";
+  const cam = new CameraDirector({ ...shotsFor(aspect), holds: Object.fromEntries(REQUIRED_ANCHORS.map((a) => [a, loc.camera.closeups[a].hold])) as Record<AnchorId, number> });
+  cam.reducedMotion = reduced;
+  directorRef.current = cam;
+  const startShot = urlParam("camera") as ShotId | null;
+  if (startShot && (startShot === "overview" || loc.anchors[startShot as AnchorId])) cam.focus(startShot, performance.now(), "manual");
+
   const resize = () => {
-    const w = host.clientWidth || 1, h = host.clientHeight || 1, aspect = w / h;
+    const w = host.clientWidth || 1, h = host.clientHeight || 1;
+    aspect = w / h;
     renderer.setSize(w, h, false);
     composer?.setPixelRatio(renderer.getPixelRatio()); composer?.setSize(w, h);
-    const pose = isoCameraPose(loc.camera.overview, loc.bounds, aspect);
-    camera.aspect = aspect; camera.fov = pose.fov;
-    camera.position.copy(pose.position); camera.lookAt(pose.target);
-    camera.near = Math.max(0.1, pose.position.distanceTo(pose.target) - 12); camera.far = pose.position.distanceTo(pose.target) + 20;
-    camera.updateProjectionMatrix();
+    const sh = shotsFor(aspect);
+    cam.reframe(sh.overview, sh.closeups, performance.now());
+    camera.aspect = aspect; camera.updateProjectionMatrix();
   };
   const ro = new ResizeObserver(resize); ro.observe(host); resize();
+
+  // Collision ("spring arm"): never let walls or furniture come between the subject and the camera.
+  const statics = [layers.shell, layers.props], camRay = new THREE.Raycaster(), tgt = new THREE.Vector3();
+  let maxDist = Infinity, camFrame = 0;
+  function applyCamera(now: number) {
+    const s = cam.update(now);
+    const shot = cam.currentShot;
+    if (shot !== lastShot) { lastShot = shot; opts.onCameraShot?.(shot); }
+    const desired = distanceFor(s.frameH, s.fov);
+    if (shot === "overview" && !cam.transitioning) maxDist = Infinity;
+    else if (camFrame++ % 3 === 0) {
+      tgt.set(...s.target);
+      camRay.set(tgt, camPosition(s).sub(tgt).normalize()); camRay.near = 0.05; camRay.far = desired;
+      const hit = camRay.intersectObjects(statics, true)[0];
+      maxDist = pullIn(desired, hit ? hit.distance : null);
+    }
+    const pos = camPosition(s, maxDist), d = pos.distanceTo(tgt.set(...s.target));
+    camera.position.copy(pos); camera.lookAt(tgt);
+    camera.fov = s.fov; camera.near = Math.max(0.05, d * 0.02); camera.far = d + 25;
+    camera.updateProjectionMatrix();
+  }
+
+  // Tap the character for a close-up; Esc returns to the room view.
+  const pointer = new THREE.Vector2(), pick = new THREE.Raycaster();
+  const onPointer = (e: PointerEvent) => {
+    const r = renderer.domElement.getBoundingClientRect();
+    pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    pick.setFromCamera(pointer, camera);
+    if (charRoot.visible && pick.intersectObject(charRoot, true).length) cam.focus(placedAt ?? anchorId, performance.now(), "manual");
+  };
+  const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") cam.focus("overview", performance.now(), "manual"); };
+  renderer.domElement.addEventListener("pointerdown", onPointer);
+  window.addEventListener("keydown", onKey);
 
   const clock = new THREE.Clock(), limiter = new FrameLimiter(quality.maxFps);
   const head = new THREE.Vector3(), chest = new THREE.Vector3();
@@ -180,7 +239,11 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
     if (!reduced) t += dt;
     // occlusion: check every few frames, ease every frame
     if (frame++ % 6 === 0) {
-      if (charRoot.visible) { charRoot.getWorldPosition(chest).y += 0.8; head.copy(chest).y += 0.35; occluding = findOccluders(camera, [head, chest], foreground); }
+      if (charRoot.visible) {
+        charRoot.getWorldPosition(chest).y += 0.8; head.copy(chest).y += 0.35;
+        occluding = findOccluders(camera, [head, chest], foreground);
+        if (cam.currentShot !== "overview") for (const f of nearerThanSubject(camera, chest, foreground)) occluding.add(f);
+      }
       else occluding = new Set();
     }
     updateFades(foreground, occluding, dt, reduced);
@@ -198,6 +261,7 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
       if (hb) hb.rotation.x = (vrm.meta?.metaVersion === "0" ? -1 : 1) * (state === "SLEEPING" ? 0.45 : reduced ? 0 : Math.sin(t * 0.5) * 0.03);
       vrm.update(dt);
     } else placeholder?.animate(t, closed, reduced);
+    applyCamera(now);
     if (composer) composer.render(dt); else renderer.render(scene, camera);
     if (frame === 1) performance.mark("olh:world-first-frame"); // load-time measurement (see docs)
     if (!budgetChecked && !composer) {
@@ -216,11 +280,16 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
     get hasVrm() { return !!vrm; }, modelReady, quality,
     stats: () => ({ drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles }),
     setState(s) { state = s; applyState(); },
-    setReducedMotion(r) { reduced = r; },
+    setReducedMotion(r) { reduced = r; cam.reducedMotion = r; },
     setRain(on) { raining = on; rain.visible = on; },
     placeAt(id) { if (loc.anchors[id]) { anchorId = id; applyState(); } },
+    focusCamera(shot) { cam.focus(shot, performance.now(), "manual"); },
+    setAutoCamera(on) { cam.auto = on; },
+    get cameraShot() { return cam.currentShot; },
+    get anchor() { return placedAt ?? anchorId; },
     destroy() {
       disposed = true; stopWatching(); cancelAnimationFrame(raf); ro.disconnect();
+      renderer.domElement.removeEventListener("pointerdown", onPointer); window.removeEventListener("keydown", onKey);
       scene.traverse((o) => { (o as THREE.Mesh).geometry?.dispose?.(); });
       kit.dispose(); composer?.dispose(); renderer.dispose(); renderer.domElement.remove();
     },

@@ -11,6 +11,8 @@ const LAYERS: readonly Layer[] = ["backdrop", "shell", "props", "foreground"];
 export interface Anchor { pos: Vec3; faceY: number; pose: AnchorPose; seatTop?: number; label: string }
 export interface PropPlacement { prefab: string; pos: Vec3; rotY?: number; layer: Layer }
 export interface IsoShot { kind: "iso"; target: Vec3; yaw: number; pitch: number; fov: number; margin: number }
+/** Cinematic close-up on an anchor. frameH = visible height (m) at the target; hold = seconds before auto returns to overview. */
+export interface CloseupShot { targetOffset: Vec3; yaw: number; pitch: number; fov: number; frameH: number; hold: number }
 export interface AssetEntry { id: string; kind: "procedural" | "file"; src?: string; status: "placeholder" | "final"; license: string; note?: string }
 export interface LocationManifest {
   id: string; name: string; version: number;
@@ -18,7 +20,7 @@ export interface LocationManifest {
   lighting: string;
   anchors: Record<AnchorId, Anchor>;
   props: PropPlacement[];
-  camera: { overview: IsoShot };
+  camera: { overview: IsoShot; closeups: Record<AnchorId, CloseupShot> };
   assets: AssetEntry[];
   budgets: { maxDrawCalls: number; maxTriangles: number; maxTextureMB: number };
 }
@@ -69,6 +71,15 @@ export function validateLocation(m: unknown, knownPrefabs: readonly string[]): s
   else {
     if (ov.fov < 8 || ov.fov > 40) errs.push("camera.overview.fov: keep between 8° and 40° for an isometric look");
     if (ov.pitch <= 0.2 || ov.pitch >= 1.4) errs.push("camera.overview.pitch: must look down between ~12° and ~80°");
+  }
+
+  for (const id of REQUIRED_ANCHORS) {
+    const c = o.camera?.closeups?.[id];
+    if (!c) { errs.push(`camera.closeups.${id}: missing`); continue; }
+    if (!isVec3(c.targetOffset) || !isNum(c.yaw) || !isNum(c.pitch) || !isNum(c.fov) || !isNum(c.frameH) || !isNum(c.hold)) { errs.push(`camera.closeups.${id}: invalid`); continue; }
+    if (c.fov < 20 || c.fov > 50) errs.push(`camera.closeups.${id}.fov: keep between 20° and 50°`);
+    if (c.pitch < 0 || c.pitch > 0.9) errs.push(`camera.closeups.${id}.pitch: keep between 0 and ~50°`);
+    if (c.frameH < 0.5 || c.frameH > 4) errs.push(`camera.closeups.${id}.frameH: 0.5–4 m`);
   }
 
   if (!Array.isArray(o.assets)) errs.push("assets: required (asset manifest)");

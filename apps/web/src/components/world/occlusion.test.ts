@@ -33,3 +33,14 @@ describe("foreground occlusion", () => {
     expect(mat.opacity).toBeLessThan(1);
   });
 });
+
+describe("close-up foreground fading", () => {
+  it("fades props nearer to the camera than the subject, even off the line of sight", async () => {
+    const { nearerThanSubject } = await import("./occlusion");
+    const cam = new THREE.PerspectiveCamera(); cam.position.set(0, 0, 10); cam.updateMatrixWorld(true);
+    const nearSide = new THREE.Group(); nearSide.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1))); nearSide.position.set(3, 0, 8);
+    const farSide = new THREE.Group(); farSide.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1))); farSide.position.set(3, 0, -4);
+    for (const g of [nearSide, farSide]) g.updateMatrixWorld(true);
+    expect([...nearerThanSubject(cam, new THREE.Vector3(0, 0, 0), [nearSide, farSide])]).toEqual([nearSide]);
+  });
+});
