@@ -7,7 +7,7 @@ import { makeKit, v } from "./kit";
 import { buildEnvironment } from "./environment";
 import { pauseWhenHidden } from "@/lib/visibility";
 import { mirrorSign, seatedTypingPose, mtoonDimFactor } from "@/components/world/character/vrmPose";
-import { applyPose, placeOnSeat, dimMaterials } from "@/components/world/character/vrmApply";
+import { applyPose, placeOnSeat, dimMaterials, makeSkirtController } from "@/components/world/character/vrmApply";
 
 export interface Scene3DHandle { setState(s: Availability): void; setReducedMotion(r: boolean): void; setRain(on: boolean): void; destroy(): void; hasVrm: boolean }
 
@@ -104,8 +104,9 @@ export async function createScene3D(host: HTMLElement, opts: { reducedMotion: bo
       applyPose(loaded.humanoid, seatedTypingPose(loaded.meta?.metaVersion));
       const lift = placeOnSeat(loaded.scene, loaded.humanoid, VRM_Z);
       ch.children[0].position.y += lift; ch.children[1].position.y += lift;
+      scene.add(loaded.scene); loaded.scene.updateMatrixWorld(true);
+      makeSkirtController(loaded.scene, loaded.springBoneManager).seat(true); // always seated here: drape, no flipping
       dimMaterials(loaded.scene, mtoonDimFactor(pal.ambient, pal.sunIntensity));
-      scene.add(loaded.scene);
       if (loaded.lookAt) loaded.lookAt.target = camera;
       ch.children.forEach((c) => { if (c !== ch.children[0] && c !== ch.children[1]) c.visible = false; }); // keep the chair
       vrm = loaded;

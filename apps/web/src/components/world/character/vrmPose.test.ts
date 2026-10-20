@@ -46,3 +46,22 @@ describe("anchor poses", () => {
     expect(pose.leftUpperArm[2]).toBeCloseTo(-pose.rightUpperArm[2]);
   });
 });
+
+describe("skirt drape", () => {
+  it("recognises VRoid skirt bones (and ignores tips and other bones)", async () => {
+    const { classifySkirtBone } = await import("./vrmPose");
+    expect(classifySkirtBone("J_Sec_L_SkirtFront0_01")).toEqual({ part: "front", segment: 0 });
+    expect(classifySkirtBone("J_Sec_R_SkirtBack2_03")).toEqual({ part: "back", segment: 2 });
+    expect(classifySkirtBone("J_Sec_L_SkirtSide2_end_01")).toBeNull();
+    expect(classifySkirtBone("J_Bip_L_UpperLeg")).toBeNull();
+  });
+  it("drape directions: front forward, side outward, back down, hems drop", async () => {
+    const { skirtDrapeDirection } = await import("./vrmPose");
+    const [, fy, fz] = skirtDrapeDirection(1, [0, 1]);
+    expect(fz).toBeGreaterThan(0.9); expect(fy).toBeLessThan(0);
+    const [sx, sy] = skirtDrapeDirection(0, [1, 0]);
+    expect(sx).toBeGreaterThan(0.2); expect(sy).toBeLessThan(-0.6);
+    expect(skirtDrapeDirection(-1, [0, -1])[1]).toBeLessThan(-0.9);
+    expect(skirtDrapeDirection(1, [0, 1], true)[1]).toBeLessThan(-0.9);
+  });
+});

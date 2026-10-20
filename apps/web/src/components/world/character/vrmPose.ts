@@ -64,3 +64,25 @@ export type AnchorPoseId = "sit_type" | "sit_relax" | "stand";
 export function poseFor(pose: AnchorPoseId, metaVersion: string | undefined): BoneRotation[] {
   return pose === "sit_type" ? seatedTypingPose(metaVersion) : pose === "sit_relax" ? seatedRelaxedPose(metaVersion) : standingIdlePose(metaVersion);
 }
+
+// ---- skirts (VRoid naming: J_Sec_<L|R>_Skirt<Front|Side|Back><segment>[_end]_<NN>) ---------------------------
+export type SkirtPart = "front" | "side" | "back";
+export function classifySkirtBone(name: string): { part: SkirtPart; segment: number } | null {
+  const m = /Skirt(Front|Side|Back)(\d+)(?!_end)_/i.exec(name);
+  return m ? { part: m[1].toLowerCase() as SkirtPart, segment: Number(m[2]) } : null;
+}
+
+/**
+ * Where a skirt panel should point when sitting, from how "front" it hangs: front = 1 (over the lap),
+ * side = 0, back = -1. Returns a unit direction in the character's frame (x = her left/right as given by
+ * `outward`, y = up, z = forward): front panels lie forward along the thighs with a slight droop, sides
+ * angle outward and down, the back hangs down onto the seat.
+ */
+export function skirtDrapeDirection(frontness: number, outward: [number, number], knee = false): [number, number, number] {
+  const f = Math.max(0, frontness), b = Math.max(0, -frontness);
+  let x: number, y: number, z: number;
+  if (knee) { x = outward[0] * 0.1; y = -1; z = 0.2 * f; }            // hem drops over the knees
+  else { x = outward[0] * 0.35 * (1 - f); y = -(0.22 + 0.78 * (1 - f)) - 0.2 * b; z = f * 1.0 + outward[1] * 0.35 * (1 - f) - 0.15 * b; }
+  const len = Math.hypot(x, y, z) || 1;
+  return [x / len, y / len, z / len];
+}

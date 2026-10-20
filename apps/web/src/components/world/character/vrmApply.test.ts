@@ -67,3 +67,54 @@ describe("placement helpers", () => {
     expect(bones.leftHand.getWorldPosition(new THREE.Vector3()).y).toBeCloseTo(0.8);
   });
 });
+
+describe("skirt controller", () => {
+  function skirtRig() {
+    const parent = new THREE.Group(), root = new THREE.Group(); parent.add(root);
+    const hips = new THREE.Object3D(); hips.name = "J_Bip_C_Hips"; hips.position.y = 0.9; root.add(hips);
+    const mk = (name: string, x: number, z: number) => {
+      const b = new THREE.Object3D(); b.name = name; b.position.set(x, 0, z); hips.add(b);
+      const c = new THREE.Object3D(); c.name = name.replace("0_", "1_"); c.position.set(0, -0.3, 0); b.add(c);
+      return { b, c };
+    };
+    const front = mk("J_Sec_L_SkirtFront0_01", 0, 0.12), back = mk("J_Sec_L_SkirtBack0_01", 0, -0.12), side = mk("J_Sec_L_SkirtSide0_01", 0.14, 0);
+    const hair = new THREE.Object3D(); hair.name = "J_Sec_Hair1_01"; hips.add(hair);
+    parent.updateMatrixWorld(true);
+    return { parent, root, front, back, side, hair };
+  }
+  const dir = (p: { b: THREE.Object3D; c: THREE.Object3D }) => p.c.getWorldPosition(new THREE.Vector3()).sub(p.b.getWorldPosition(new THREE.Vector3())).normalize();
+
+  it("drapes the front over the lap, sides out/down, back down — and pauses only skirt physics", async () => {
+    const { makeSkirtController } = await import("./vrmApply");
+    const r = skirtRig();
+    const joints = new Set([{ bone: r.front.b }, { bone: r.back.b }, { bone: r.hair }]);
+    const springs = { joints, addJoint: vi.fn((j) => joints.add(j)), deleteJoint: vi.fn((j) => joints.delete(j)), reset: vi.fn() };
+    const skirt = makeSkirtController(r.root, springs);
+    skirt.seat(true);
+    expect([...joints].map((j) => j.bone.name)).toEqual(["J_Sec_Hair1_01"]);
+    const f = dir(r.front), b = dir(r.back), s = dir(r.side);
+    expect(f.z).toBeGreaterThan(0.9);       // forward along the thighs
+    expect(f.y).toBeLessThan(0);            // never upward (no flipping)
+    expect(b.y).toBeLessThan(-0.9);         // back hangs down onto the seat
+    expect(s.x).toBeGreaterThan(0.2); expect(s.y).toBeLessThan(-0.6); // side: outward and down
+  });
+
+  it("follows the character's facing", async () => {
+    const { makeSkirtController } = await import("./vrmApply");
+    const r = skirtRig(); r.parent.rotation.y = Math.PI / 2; r.parent.updateMatrixWorld(true); // facing +X
+    makeSkirtController(r.root, null).seat(true);
+    expect(dir(r.front).x).toBeGreaterThan(0.9);
+  });
+
+  it("standing restores the rest pose and restarts physics", async () => {
+    const { makeSkirtController } = await import("./vrmApply");
+    const r = skirtRig();
+    const joints = new Set([{ bone: r.front.b }]);
+    const springs = { joints, addJoint: vi.fn((j) => joints.add(j)), deleteJoint: vi.fn((j) => joints.delete(j)), reset: vi.fn() };
+    const skirt = makeSkirtController(r.root, springs);
+    skirt.seat(true); skirt.seat(false);
+    expect(r.front.b.quaternion.equals(new THREE.Quaternion())).toBe(true);
+    expect(joints.size).toBe(1);
+    expect(springs.reset).toHaveBeenCalledOnce();
+  });
+});

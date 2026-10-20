@@ -16,7 +16,7 @@ import { findOccluders, makeFadeable, nearerThanSubject, updateFades } from "./o
 import { mergeStatic } from "./mergeStatic";
 import { overBudget } from "./budget";
 import { detectTier, qualityFor, readDeviceInfo, parseQualityOverride, FrameLimiter, type Quality } from "./quality";
-import { applyPose, placeSeated, placeStanding, dimMaterials, type HumanoidLike } from "./character/vrmApply";
+import { applyPose, placeSeated, placeStanding, dimMaterials, makeSkirtController, type HumanoidLike, type SpringManagerLike } from "./character/vrmApply";
 import { poseFor, mtoonDimFactor, standingIdlePose, KEYBOARD_HAND_Y } from "./character/vrmPose";
 import { pointAlong, pathLength } from "@/world/sim/nav";
 import { GlanceScheduler, headTurnToward } from "./character/glance";
@@ -59,6 +59,7 @@ export interface WorldOptions {
 type VRMLike = {
   scene: THREE.Object3D; update(d: number): void; humanoid: HumanoidLike;
   expressionManager?: { setValue(n: string, v: number): void } | null; lookAt?: { target?: THREE.Object3D } | null; meta?: { metaVersion?: string };
+  springBoneManager?: SpringManagerLike | null;
 };
 
 const urlParam = (k: string) => (typeof location !== "undefined" ? new URLSearchParams(location.search).get(k) : null);
@@ -120,6 +121,7 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
   // character: wrapper sits at the anchor; the model (VRM or placeholder) is posed inside it
   const charRoot = new THREE.Group(); scene.add(charRoot);
   let vrm: VRMLike | null = null;
+  let skirt: ReturnType<typeof makeSkirtController> | null = null; // drapes skirts while seated (no flipping)
   // The placeholder shows only when no model is selected; a selected VRM loads in the background so the room
   // appears immediately instead of after a ~20 MB download.
   const placeholder = opts.modelUrl ? null : buildPlaceholder(kit);
@@ -134,6 +136,7 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
       VRMUtils.rotateVRM0(loaded as never);
       dimMaterials(loaded.scene, mtoonDimFactor(pal.ambient, pal.sunIntensity));
       charRoot.add(loaded.scene);
+      skirt = makeSkirtController(loaded.scene, loaded.springBoneManager);
       vrm = loaded;
       applyState();
       performance.mark("olh:world-model-ready");
@@ -145,6 +148,26 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
   if (!loc.anchors[anchorId]) anchorId = "desk";
   let state = opts.state, reduced = opts.reducedMotion, raining = opts.rain;
 
+  // Lap items for armchair poses: an open book while reading, a folded blanket while relaxing/sleeping.
+  // They suit the activity and keep short skirts modest when seated.
+  const lapBook = new THREE.Group(), lapBlanket = new THREE.Group();
+  for (const s of [-1, 1]) { const page = kit.box(0.15, 0.012, 0.22, 0xfffaf0, v(s * 0.077, 0, 0), lapBook, 1.04); page.rotation.z = -s * 0.16; }
+  kit.box(0.33, 0.01, 0.23, 0x8f7cc9, v(0, -0.012, 0), lapBook, 1.03);
+  kit.box(0.4, 0.04, 0.3, 0xf3c6c0, v(0, 0, 0), lapBlanket, 1.03);
+  for (const x of [-0.11, 0.11]) kit.box(0.035, 0.042, 0.302, 0xfbe4dc, v(x, 0, 0), lapBlanket, 0);
+  lapBook.visible = lapBlanket.visible = false;
+  charRoot.add(lapBook, lapBlanket);
+  function placeLapItem(pose: string) {
+    lapBook.visible = lapBlanket.visible = false;
+    if (pose !== "sit_relax") return;
+    const item = sim && sim.activity !== "reading" ? lapBlanket : lapBook;
+    const hips = vrm?.humanoid.getNormalizedBoneNode("hips");
+    const local = hips ? charRoot.worldToLocal(hips.getWorldPosition(new THREE.Vector3())) : new THREE.Vector3(0, 0.5, 0);
+    const book = item === lapBook;
+    item.position.set(0, local.y + (book ? 0.09 : 0.06), local.z + (book ? 0.17 : 0.2)); item.rotation.set(book ? -0.3 : -0.08, 0, 0);
+    item.visible = true;
+  }
+
   function place(id: AnchorId) {
     const a = loc.anchors[id];
     charRoot.position.set(...a.pos); charRoot.rotation.y = a.faceY;
@@ -153,13 +176,17 @@ export async function createWorldScene(host: HTMLElement, opts: WorldOptions): P
       applyPose(vrm.humanoid, poseFor(a.pose, vrm.meta?.metaVersion));
       if (a.pose === "stand") placeStanding(vrm.scene);
       else placeSeated(vrm.scene, vrm.humanoid, a.seatTop ?? 0.5, a.pose === "sit_type" ? KEYBOARD_HAND_Y : undefined);
+      vrm.humanoid.update?.(); charRoot.updateMatrixWorld(true);
+      skirt?.seat(a.pose !== "stand"); // after the body is posed and placed: drape by direction
     } else placeholder?.setPose(a.pose, a.seatTop ?? 0.5);
+    placeLapItem(a.pose);
   }
   let placedAt: AnchorId | null = null;
   let sim: SimSnapshot | null = null, walkLen = 1, simNow: () => number = () => Date.now();
   function startWalking() {
     walkLen = Math.max(0.1, pathLength(sim!.walk!.path));
-    if (vrm) { vrm.humanoid.resetNormalizedPose?.(); applyPose(vrm.humanoid, standingIdlePose(vrm.meta?.metaVersion)); placeStanding(vrm.scene); }
+    lapBook.visible = lapBlanket.visible = false;
+    if (vrm) { vrm.humanoid.resetNormalizedPose?.(); applyPose(vrm.humanoid, standingIdlePose(vrm.meta?.metaVersion)); skirt?.seat(false); placeStanding(vrm.scene); }
     else placeholder?.setPose("stand", 0);
   }
   /** Procedural walk (no animation clips needed): alternating thighs/knees, counter-swinging arms, slight bob. */
