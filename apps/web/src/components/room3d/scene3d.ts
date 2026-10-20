@@ -34,7 +34,7 @@ export async function createScene3D(host: HTMLElement, opts: { reducedMotion: bo
       import("three/examples/jsm/postprocessing/UnrealBloomPass.js"), import("three/examples/jsm/postprocessing/OutputPass.js")]);
     const c = new EffectComposer(renderer);
     c.addPass(new RenderPass(scene, camera));
-    c.addPass(new UnrealBloomPass(new THREE.Vector2(256, 256), pal.bloom, 0.5, 0.92));
+    c.addPass(new UnrealBloomPass(new THREE.Vector2(256, 256), pal.bloom, 0.5, 0.97));
     c.addPass(new OutputPass());
     composer = c;
   } catch (e) { console.warn("Bloom unavailable", e); }
@@ -118,6 +118,14 @@ export async function createScene3D(host: HTMLElement, opts: { reducedMotion: bo
       const seatLift = Math.max(0, 0.8 - (0.56 + handY - hipY));
       loaded.scene.position.set(0, 0.56 + seatLift - hipY, VRM_Z);
       ch.children[0].position.y += seatLift; ch.children[1].position.y += seatLift;
+      // MToon (VRoid) materials are tuned for ~1.0 total light; the room is brighter by day, so dim the model to match.
+      const k = Math.min(1, Math.max(0.45, 1.05 / (pal.ambient + pal.sunIntensity * 0.5)));
+      loaded.scene.traverse((o: THREE.Object3D) => {
+        const mesh = o as THREE.Mesh;
+        for (const m of (Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : []) as (THREE.Material & { color?: THREE.Color; shadeColorFactor?: THREE.Color })[]) {
+          m.color?.multiplyScalar(k); m.shadeColorFactor?.multiplyScalar(k);
+        }
+      });
       scene.add(loaded.scene);
       if (loaded.lookAt) loaded.lookAt.target = camera;
       ch.children.forEach((c) => { if (c !== ch.children[0] && c !== ch.children[1]) c.visible = false; }); // keep the chair

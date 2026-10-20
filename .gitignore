@@ -8,3 +8,5 @@ build/
 out/
 .DS_Store
 .claude/
+# VRoid Studio project files (browsers cannot load them; export to .vrm instead)
+*.vroid

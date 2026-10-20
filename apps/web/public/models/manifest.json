@@ -1,9 +1,9 @@
 {
   "characters": [
-    { "id": "girl-one", "name": "Mio", "file": "girl-one.vrm", "thumbnail": "thumbs/girl-one.jpg" },
-    { "id": "girl-two", "name": "Yuki", "file": "girl-two.vrm", "thumbnail": "thumbs/girl-two.jpg" },
-    { "id": "girl-three", "name": "Rina", "file": "girl-three.vrm", "thumbnail": "thumbs/girl-three.jpg" },
-    { "id": "girl-four", "name": "Sakura", "file": "girl-four.vrm", "thumbnail": "thumbs/girl-four.jpg" },
-    { "id": "girl-five", "name": "Shion", "file": "girl-five.vrm", "thumbnail": "thumbs/girl-five.jpg" }
+    { "id": "girl-one", "name": "Mio", "file": "Mio.vrm", "thumbnail": "thumbs/girl-one.jpg" },
+    { "id": "girl-two", "name": "Yuki", "file": "Yuki.vrm", "thumbnail": "thumbs/girl-two.jpg" },
+    { "id": "girl-three", "name": "Rina", "file": "Rina.vrm", "thumbnail": "thumbs/girl-three.jpg" },
+    { "id": "girl-four", "name": "Sakura", "file": "Sakura.vrm", "thumbnail": "thumbs/girl-four.jpg" },
+    { "id": "girl-five", "name": "Shion", "file": "Shion.vrm", "thumbnail": "thumbs/girl-five.jpg" }
   ]
 }
